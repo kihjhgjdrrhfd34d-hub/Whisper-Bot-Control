@@ -408,6 +408,34 @@ class TestHandleReplyMessage(unittest.TestCase):
         self.assertEqual(reply["content"], "a proper reply")
         self.assertEqual(reply["sender_id"], 90011)
 
+<<<<<<< HEAD
+=======
+    def test_rejects_when_replies_disabled(self):
+        """Pending state but replies disabled → consumed, no reply created."""
+        import database
+        from handlers.replies import handle_reply_message
+        _boot()
+        database.set_setting("whisper_replies_enabled", "0")
+        db.upsert_user(90020, "s20", "S20", None)
+        wid = db.create_whisper(90020, "disabled test", "everyone")
+
+        mock_bot = MagicMock()
+        mock_msg = MagicMock()
+        mock_msg.from_user.id = 90020
+        mock_msg.content_type = "text"
+        mock_msg.text = "should not save"
+        mock_msg.caption = None
+        mock_msg.chat.id = 90020
+
+        user_states = {90020: {"action": "pending_whisper_reply",
+                                "whisper_id": wid}}
+        result = handle_reply_message(mock_bot, mock_msg, user_states)
+        self.assertTrue(result)
+        self.assertNotIn(90020, user_states)
+        self.assertEqual(count_replies(wid), 0)
+        database.set_setting("whisper_replies_enabled", "1")  # restore
+
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 10. _extract_media helper
@@ -487,7 +515,12 @@ class TestExtractMedia(unittest.TestCase):
 
 class TestSupportedMedia(unittest.TestCase):
     def test_all_required_types_present(self):
+<<<<<<< HEAD
         required = {"photo", "video", "voice", "audio", "document", "sticker", "animation", "contact", "location"}
+=======
+        required = {"photo", "video", "voice", "audio", "document", "sticker",
+                     "animation", "contact", "location"}
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
         self.assertEqual(required, SUPPORTED_MEDIA)
 
     def test_live_location_not_supported(self):

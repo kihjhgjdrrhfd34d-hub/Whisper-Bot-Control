@@ -65,10 +65,25 @@ def _guard_admin(bot: telebot.TeleBot,
 
 def admin_main_keyboard() -> InlineKeyboardMarkup:
     """Main admin panel keyboard."""
+<<<<<<< HEAD
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("🔔 إشعارات الدخول", callback_data="admin:notify_new_user"),
         InlineKeyboardButton("🚫 إشعارات الحظر",  callback_data="admin:notify_block"),
+=======
+    notify_new_user = get_setting("notify_new_user")
+    notify_block = get_setting("notify_block")
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton(
+            f"{'✅' if notify_new_user == '1' else '❌'} إشعارات الدخول",
+            callback_data="admin:notify_new_user",
+        ),
+        InlineKeyboardButton(
+            f"{'✅' if notify_block == '1' else '❌'} إشعارات الحظر",
+            callback_data="admin:notify_block",
+        ),
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     )
     kb.add(
         InlineKeyboardButton("📊 الإحصائيات",      callback_data="admin:stats"),
@@ -218,6 +233,16 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
         set_setting("notify_new_user", new_val)
         label = "✅ مفعّل" if new_val == "1" else "❌ معطّل"
         _answer(bot, call, f"🔔 إشعارات الدخول أصبحت {label}", alert=True)
+<<<<<<< HEAD
+=======
+        try:
+            bot.edit_message_reply_markup(
+                call.message.chat.id, call.message.message_id,
+                reply_markup=admin_main_keyboard(),
+            )
+        except Exception:
+            pass
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
     @bot.callback_query_handler(func=lambda c: c.data == "admin:notify_block")
     def admin_notify_block(call: telebot.types.CallbackQuery):
@@ -229,6 +254,16 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
         set_setting("notify_block", new_val)
         label = "✅ مفعّل" if new_val == "1" else "❌ معطّل"
         _answer(bot, call, f"🚫 إشعارات الحظر أصبحت {label}", alert=True)
+<<<<<<< HEAD
+=======
+        try:
+            bot.edit_message_reply_markup(
+                call.message.chat.id, call.message.message_id,
+                reply_markup=admin_main_keyboard(),
+            )
+        except Exception:
+            pass
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
     # ── Settings panel ───────────────────────────────────────────────────────
     @bot.callback_query_handler(func=lambda c: c.data == "admin:settings")

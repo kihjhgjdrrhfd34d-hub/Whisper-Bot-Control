@@ -54,6 +54,10 @@ def init_replies_db() -> None:
                 reply_id    TEXT PRIMARY KEY,
                 whisper_id  TEXT NOT NULL,
                 sender_id   INTEGER NOT NULL,
+<<<<<<< HEAD
+=======
+                parent_reply_id TEXT,
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
                 content     TEXT NOT NULL DEFAULT '',
                 media_type  TEXT,
                 file_id     TEXT,
@@ -80,9 +84,33 @@ def init_replies_db() -> None:
                 ON reply_reads(reply_id);
         """)
         conn.commit()
+<<<<<<< HEAD
     logger.debug("Replies schema initialised.")
 
 
+=======
+    _migrate_add_parent_reply_id()
+    logger.debug("Replies schema initialised.")
+
+
+def _migrate_add_parent_reply_id() -> None:
+    """Add parent_reply_id column to existing whisper_replies tables."""
+    with get_conn() as conn:
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+        if "whisper_replies" in tables:
+            cols = [r[1] for r in conn.execute(
+                "PRAGMA table_info(whisper_replies)"
+            ).fetchall()]
+            if "parent_reply_id" not in cols:
+                conn.execute(
+                    "ALTER TABLE whisper_replies ADD COLUMN parent_reply_id TEXT"
+                )
+                conn.commit()
+
+
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 # ─────────────────────────────────────────────────────────────────────────────
 # CRUD
 # ─────────────────────────────────────────────────────────────────────────────
@@ -93,10 +121,21 @@ def create_reply(
     content: str = "",
     media_type=None,
     file_id=None,
+<<<<<<< HEAD
+=======
+    parent_reply_id=None,
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 ):
     """
     Insert a new reply and return its reply_id.
 
+<<<<<<< HEAD
+=======
+    parent_reply_id chains this reply to a previous one for bi-directional
+    conversation routing (the reply will be routed to the sender of the
+    parent reply instead of the original whisper sender).
+
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     Returns None if:
     - the parent whisper does not exist
     - the whisper has reached MAX_REPLIES_PER_WHISPER
@@ -128,10 +167,17 @@ def create_reply(
         conn.execute(
             """
             INSERT INTO whisper_replies
+<<<<<<< HEAD
                 (reply_id, whisper_id, sender_id, content, media_type, file_id)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (rid, whisper_id, sender_id, content or "", media_type, file_id),
+=======
+                (reply_id, whisper_id, sender_id, parent_reply_id, content, media_type, file_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (rid, whisper_id, sender_id, parent_reply_id, content or "", media_type, file_id),
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
         )
         conn.commit()
     return rid
@@ -145,6 +191,27 @@ def get_reply(reply_id: str):
         ).fetchone()
 
 
+<<<<<<< HEAD
+=======
+def get_reply_sender(reply_id: str):
+    """Return the sender_id of a reply, or None if not found."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT sender_id FROM whisper_replies WHERE reply_id=?", (reply_id,)
+        ).fetchone()
+        return row["sender_id"] if row else None
+
+
+def whisper_id_from_reply(reply_id: str):
+    """Return the whisper_id associated with a reply, or None."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT whisper_id FROM whisper_replies WHERE reply_id=?", (reply_id,)
+        ).fetchone()
+        return row["whisper_id"] if row else None
+
+
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 def get_replies(whisper_id: str) -> list:
     """Return all replies for a whisper, oldest first."""
     with get_conn() as conn:
@@ -197,6 +264,7 @@ def mark_reply_read(reply_id: str, user_id: int) -> bool:
 # Permission helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+<<<<<<< HEAD
 def get_first_reader(whisper_id: str):
     """
     Return the first reader (the conversation partner) for a whisper.
@@ -237,6 +305,8 @@ def get_conversation_partner(whisper_id: str, user_id: int):
     return None
 
 
+=======
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 def can_reply_to_whisper(whisper_id: str, user_id: int):
     """
     Decide whether user_id may send a reply to whisper_id.
@@ -245,7 +315,11 @@ def can_reply_to_whisper(whisper_id: str, user_id: int):
     -----
     - Whisper must exist.
     - Whisper must not be locked.
+<<<<<<< HEAD
     - user_id must be the sender OR the first reader (conversation partner).
+=======
+    - user_id must be the sender OR an authorised reader.
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     - Reply cap must not be exceeded.
     - Ban check is the caller's responsibility.
 
@@ -263,11 +337,22 @@ def can_reply_to_whisper(whisper_id: str, user_id: int):
     if w["is_locked"]:
         return False, "whisper_locked"
 
+<<<<<<< HEAD
     if user_id == w["sender_id"]:
         pass
     else:
         partner = get_conversation_partner(whisper_id, user_id)
         if not partner:
+=======
+    if user_id != w["sender_id"]:
+        with get_conn() as conn:
+            is_reader = conn.execute(
+                "SELECT 1 FROM whisper_readers"
+                " WHERE whisper_id=? AND user_id=?",
+                (whisper_id, user_id),
+            ).fetchone()
+        if not is_reader:
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
             return False, "not_participant"
 
     current = count_replies(whisper_id)
@@ -277,6 +362,7 @@ def can_reply_to_whisper(whisper_id: str, user_id: int):
     return True, "ok"
 
 
+<<<<<<< HEAD
 def get_reply_recipient(whisper_id: str, replier_id: int):
     """
     Return the user_id who should receive this reply (the conversation partner).
@@ -284,6 +370,8 @@ def get_reply_recipient(whisper_id: str, replier_id: int):
     return get_conversation_partner(whisper_id, replier_id)
 
 
+=======
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 def get_whisper_participants(whisper_id: str) -> dict:
     """
     Return {'sender_id': int, 'reader_ids': [int, ...]} for a whisper.

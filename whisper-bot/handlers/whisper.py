@@ -2,7 +2,11 @@ import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from database import (
+<<<<<<< HEAD
     get_whisper, can_read_whisper, add_reader, add_curious,
+=======
+    get_whisper, can_read_whisper, add_reader, record_whisper_read, add_curious,
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     toggle_whisper_lock, delete_whisper, clear_whisper_readers,
     update_whisper_content, get_readers, get_curious_ones,
     upsert_user, get_setting, is_banned, reader_count
@@ -44,9 +48,24 @@ def register_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
 
         if not can:
             if reason == "locked":
+<<<<<<< HEAD
                 bot.answer_callback_query(
                     call.id, "🔒 الهمسة مقفلة حالياً من قِبل صاحبها.", show_alert=True
                 )
+=======
+                if w["whisper_type"] == "first_three" and reader_count(whisper_id) >= 3:
+                    _readers = get_readers(whisper_id)
+                    opener_name = _readers[0]["first_name"] if _readers else "شخص آخر"
+                    bot.answer_callback_query(
+                        call.id,
+                        f"لقد تم فتح الهمسه من قبل ({opener_name}) انتظر الهمسه الثانيه من نصيبك",
+                        show_alert=True,
+                    )
+                else:
+                    bot.answer_callback_query(
+                        call.id, "🔒 الهمسة مقفلة حالياً من قِبل صاحبها.", show_alert=True
+                    )
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
             elif reason == "taken":
                 readers = get_readers(whisper_id)
                 opener_name = readers[0]["first_name"] if readers else "شخص آخر"
@@ -73,13 +92,20 @@ def register_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
             bot.answer_callback_query(call.id, f"🤫 {w['content']}", show_alert=True)
             return
 
+<<<<<<< HEAD
         # ── مستخدم آخر: تسجيله كقارئ ────────────────────────────────────────
         is_first_reader = reader_count(whisper_id) == 0
         add_reader(whisper_id, user.id)
+=======
+        # ── مستخدم آخر: تسجيله كقارئ مع قفل ذكي حسب النوع ────────────────────
+        is_new_read = record_whisper_read(whisper_id, user.id)
+        is_first_reader = (reader_count(whisper_id) == 1) if is_new_read else False
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
         # عرض محتوى الهمسة كـ pop-up alert — بدون عداد القراءات
         bot.answer_callback_query(call.id, f"🤫 {w['content']}", show_alert=True)
 
+<<<<<<< HEAD
         # همسة لأول شخص: تحديث الكيبورد + إشعار المالك عند الفتح الأول
         if w["whisper_type"] == "first_one" and is_first_reader:
             opener_name = user.first_name or "مجهول"
@@ -97,12 +123,98 @@ def register_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
                     bot.edit_message_reply_markup(
                         inline_message_id=call.inline_message_id,
                         reply_markup=locked_kb,
+=======
+        # ── تحديث أزرار رسالة المجموعة + كشف نوع الهمسة ────────────────
+        opener_name = user.first_name or "مجهول"
+        readers = get_readers(whisper_id)
+        reader_count_val = len(readers)
+        wtype = w["whisper_type"]
+
+        if wtype == "everyone":
+            kb = InlineKeyboardMarkup(row_width=1)
+            for r in readers:
+                name = r["first_name"] or "مجهول"
+                kb.add(InlineKeyboardButton(
+                    f"👁 {name}", callback_data=f"read:{whisper_id}"
+                ))
+            kb.add(InlineKeyboardButton(
+                "💬 رد على الهمسة", callback_data=f"group_reply:{whisper_id}"
+            ))
+            try:
+                if call.inline_message_id:
+                    bot.edit_message_reply_markup(
+                        inline_message_id=call.inline_message_id, reply_markup=kb,
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
                     )
                 elif call.message:
                     bot.edit_message_reply_markup(
                         chat_id=call.message.chat.id,
+<<<<<<< HEAD
                         message_id=call.message.message_id,
                         reply_markup=locked_kb,
+=======
+                        message_id=call.message.message_id, reply_markup=kb,
+                    )
+            except Exception as e:
+                logger.debug(f"edit_reply_markup everyone: {e}")
+
+        elif wtype == "first_three":
+            kb = InlineKeyboardMarkup(row_width=1)
+            if reader_count_val < 3:
+                for r in readers:
+                    name = r["first_name"] or "مجهول"
+                    kb.add(InlineKeyboardButton(
+                        f"👁 {name}", callback_data=f"read:{whisper_id}"
+                    ))
+                kb.add(InlineKeyboardButton(
+                    "💬 رد على الهمسة", callback_data=f"group_reply:{whisper_id}"
+                ))
+            else:
+                kb.add(InlineKeyboardButton(
+                    "🔒 تم قرائة الهمسة", callback_data=f"read:{whisper_id}"
+                ))
+                for r in readers:
+                    name = r["first_name"] or "مجهول"
+                    kb.add(InlineKeyboardButton(
+                        name, callback_data=f"read:{whisper_id}"
+                    ))
+                kb.add(InlineKeyboardButton(
+                    "💬 رد على الهمسة", callback_data=f"group_reply:{whisper_id}"
+                ))
+            try:
+                if call.inline_message_id:
+                    bot.edit_message_reply_markup(
+                        inline_message_id=call.inline_message_id, reply_markup=kb,
+                    )
+                elif call.message:
+                    bot.edit_message_reply_markup(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id, reply_markup=kb,
+                    )
+            except Exception as e:
+                logger.debug(f"edit_reply_markup first_three: {e}")
+
+        elif wtype == "first_one" and is_first_reader:
+            # تحديث كيبورد المجموعة لقفلها
+            kb = InlineKeyboardMarkup(row_width=1)
+            kb.add(InlineKeyboardButton(
+                "🔒 تم قرائة الهمسة", callback_data=f"read:{whisper_id}"
+            ))
+            for r in readers:
+                name = r["first_name"] or "مجهول"
+                kb.add(InlineKeyboardButton(
+                    name, callback_data=f"read:{whisper_id}"
+                ))
+            try:
+                if call.inline_message_id:
+                    bot.edit_message_reply_markup(
+                        inline_message_id=call.inline_message_id, reply_markup=kb,
+                    )
+                elif call.message:
+                    bot.edit_message_reply_markup(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id, reply_markup=kb,
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
                     )
             except Exception as e:
                 logger.debug(f"edit_reply_markup first_one: {e}")
@@ -133,6 +245,46 @@ def register_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
             except Exception:
                 pass
 
+<<<<<<< HEAD
+=======
+    # ─── زر الرد الجماعي ─────────────────────────────────────────────────────────
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("group_reply:"))
+    def handle_group_reply(call: telebot.types.CallbackQuery):
+        user = call.from_user
+        whisper_id = call.data.split(":", 1)[1]
+        upsert_user(user.id, user.username, user.first_name, user.last_name)
+
+        if is_banned(user.id):
+            bot.answer_callback_query(
+                call.id, "🚫 أنت محظور من استخدام البوت.", show_alert=True
+            )
+            return
+
+        w = get_whisper(whisper_id)
+        if not w:
+            bot.answer_callback_query(
+                call.id, "❌ الهمسة غير موجودة أو تم حذفها.", show_alert=True
+            )
+            return
+
+        readers = get_readers(whisper_id)
+        reader_ids = [r["user_id"] for r in readers]
+
+        if user.id not in reader_ids and user.id != w["sender_id"]:
+            bot.answer_callback_query(
+                call.id,
+                "⚠️ عذراً، هذا الزر مخصص فقط لمن قرأ الهمسة!",
+                show_alert=True,
+            )
+            return
+
+        bot_info = bot.get_me()
+        bot.answer_callback_query(
+            call.id,
+            url=f"https://t.me/{bot_info.username}?start=reply_{whisper_id}",
+        )
+
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     # ─── قفل / فتح ──────────────────────────────────────────────────────────────
     @bot.callback_query_handler(func=lambda c: c.data.startswith("lock:"))
     def handle_lock(call: telebot.types.CallbackQuery):

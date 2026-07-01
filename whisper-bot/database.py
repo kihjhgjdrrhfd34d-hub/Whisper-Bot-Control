@@ -190,12 +190,71 @@ def clear_whisper_readers(whisper_id):
 
 
 def add_reader(whisper_id, user_id):
+<<<<<<< HEAD
     with get_conn() as conn:
         conn.execute("""
             INSERT OR IGNORE INTO whisper_readers (whisper_id, user_id)
             VALUES (?, ?)
         """, (whisper_id, user_id))
         conn.commit()
+=======
+    """Insert reader (idempotent). Kept for backward compatibility."""
+    add_reader_if_new(whisper_id, user_id)
+
+
+def add_reader_if_new(whisper_id: str, user_id: int) -> bool:
+    """
+    Insert the reader record atomically.
+    Returns True on first insert, False if already exists.
+    """
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO whisper_readers (whisper_id, user_id) VALUES (?, ?)",
+            (whisper_id, user_id),
+        )
+        inserted = conn.execute("SELECT changes()").fetchone()[0]
+        conn.commit()
+    return inserted == 1
+
+
+def record_whisper_read(whisper_id: str, user_id: int) -> bool:
+    """
+    Register a reader and conditionally auto-lock the whisper based on its type.
+
+    Rules
+    -----
+    * everyone    — reader is registered; is_locked is **never** touched.
+    * first_three — reader is registered; is_locked is set to 1 **only**
+                    when the reader count reaches 3 or more.
+    * first_one, custom — no auto-lock (permission gating via can_read_whisper).
+
+    Returns True if reader was newly added, False if already existed.
+    """
+    is_new = add_reader_if_new(whisper_id, user_id)
+    if not is_new:
+        return False
+
+    w = get_whisper(whisper_id)
+    if not w:
+        return True
+
+    wtype = w["whisper_type"]
+    if wtype == "everyone":
+        return True
+
+    if wtype == "first_three":
+        count = reader_count(whisper_id)
+        if count >= 3:
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE whispers SET is_locked=1 WHERE whisper_id=?",
+                    (whisper_id,),
+                )
+                conn.commit()
+        return True
+
+    return True
+>>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
 
 def get_readers(whisper_id):
