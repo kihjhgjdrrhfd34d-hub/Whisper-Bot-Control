@@ -5,27 +5,15 @@ from datetime import datetime, timedelta
 from config import DATABASE_PATH, DEFAULT_SETTINGS
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Connection helper
-# ─────────────────────────────────────────────────────────────────────────────
-
 def get_conn():
     conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    # WAL mode: concurrent reads don't block writes
     conn.execute("PRAGMA journal_mode=WAL")
-    # Keep 8 MB of pages in memory (default is only 2 MB)
     conn.execute("PRAGMA cache_size=-8000")
-    # Normal sync: safe after system crash but faster than FULL
     conn.execute("PRAGMA synchronous=NORMAL")
-    # Enable foreign key enforcement
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Schema initialisation + migrations
-# ─────────────────────────────────────────────────────────────────────────────
 
 def init_db():
     with get_conn() as conn:
@@ -50,10 +38,7 @@ def init_db():
                 is_locked       INTEGER DEFAULT 0,
                 created_at      TEXT DEFAULT (datetime('now')),
                 auto_delete_at  TEXT,
-<<<<<<< HEAD
-=======
                 is_destructive  INTEGER DEFAULT 0,
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
                 FOREIGN KEY (sender_id) REFERENCES users(user_id)
             );
 
@@ -95,7 +80,6 @@ def init_db():
                 sent_by    INTEGER
             );
         """)
-        # ── Indexes for hot-path queries ──────────────────────────────────
         conn.executescript("""
             CREATE INDEX IF NOT EXISTS idx_whispers_sender
                 ON whispers(sender_id);
@@ -114,38 +98,31 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_users_created
                 ON users(created_at);
         """)
-        # seed default settings (won't overwrite existing values)
         for key, val in DEFAULT_SETTINGS.items():
             conn.execute(
                 "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
                 (key, val),
             )
         conn.commit()
-    # Replies schema (additive — safe if tables already exist)
     try:
         from database.replies import init_replies_db
         init_replies_db()
     except Exception:
-        pass   # replies module is optional at import time
+        pass
     _run_migrations()
 
 
 def _run_migrations():
-    """Add columns / rows that may be missing from older databases.
-    Safe to call on a fresh DB — always checks existence before altering."""
     with get_conn() as conn:
-        # Guard: tables must exist before we try to alter them
         tables = {r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()}
 
-        # Migration 1: add `started` column to users if missing
         if "users" in tables:
             cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
             if "started" not in cols:
                 conn.execute("ALTER TABLE users ADD COLUMN started INTEGER DEFAULT 0")
 
-        # Migration 2: ensure all DEFAULT_SETTINGS keys exist in settings table
         if "settings" in tables:
             for key, val in DEFAULT_SETTINGS.items():
                 conn.execute(
@@ -153,16 +130,11 @@ def _run_migrations():
                     (key, val),
                 )
 
-<<<<<<< HEAD
-=======
-        # Migration 4: add is_destructive column to whispers
         if "whispers" in tables:
             cols = [r[1] for r in conn.execute("PRAGMA table_info(whispers)").fetchall()]
             if "is_destructive" not in cols:
                 conn.execute("ALTER TABLE whispers ADD COLUMN is_destructive INTEGER DEFAULT 0")
 
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
-        # Migration 3: add performance indexes only when tables exist
         existing_tables = {r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()}
@@ -200,10 +172,6 @@ def _run_migrations():
         conn.commit()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Users
-# ─────────────────────────────────────────────────────────────────────────────
-
 def upsert_user(user_id, username=None, first_name=None, last_name=None):
     with get_conn() as conn:
         conn.execute(
@@ -221,7 +189,6 @@ def upsert_user(user_id, username=None, first_name=None, last_name=None):
 
 
 def is_new_user(user_id):
-    """Return True if the user has never completed /start before."""
     with get_conn() as conn:
         row = conn.execute(
             "SELECT started FROM users WHERE user_id=?", (user_id,)
@@ -232,7 +199,6 @@ def is_new_user(user_id):
 
 
 def mark_user_started(user_id):
-    """Mark that the user has completed their first /start."""
     with get_conn() as conn:
         conn.execute(
             "UPDATE users SET started=1 WHERE user_id=?", (user_id,)
@@ -287,18 +253,10 @@ def search_users(query):
         ).fetchall()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Whispers
-# ─────────────────────────────────────────────────────────────────────────────
-
 def create_whisper(
     sender_id, content, whisper_type,
-<<<<<<< HEAD
-    target_users=None, max_readers=0, auto_delete_hours=0
-=======
     target_users=None, max_readers=0, auto_delete_hours=0,
     is_destructive=False,
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 ):
     wid = str(uuid.uuid4())[:12]
     targets = json.dumps(target_users or [])
@@ -312,17 +270,10 @@ def create_whisper(
             """
             INSERT INTO whispers
                 (whisper_id, sender_id, content, whisper_type,
-<<<<<<< HEAD
-                 target_users, max_readers, auto_delete_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (wid, sender_id, content, whisper_type, targets, max_readers, auto_delete_at),
-=======
                  target_users, max_readers, auto_delete_at, is_destructive)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (wid, sender_id, content, whisper_type, targets, max_readers, auto_delete_at, int(is_destructive)),
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
         )
         conn.commit()
     return wid
@@ -359,21 +310,16 @@ def toggle_whisper_lock(whisper_id):
         return new_state
 
 
-<<<<<<< HEAD
-=======
 def lock_whisper(whisper_id):
-    """Set is_locked = 1 on a whisper unconditionally."""
     with get_conn() as conn:
         conn.execute("UPDATE whispers SET is_locked=1 WHERE whisper_id=?", (whisper_id,))
         conn.commit()
 
 
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 def delete_whisper(whisper_id):
     with get_conn() as conn:
         conn.execute("DELETE FROM whisper_readers WHERE whisper_id=?", (whisper_id,))
         conn.execute("DELETE FROM curious_ones WHERE whisper_id=?", (whisper_id,))
-        # Delete replies if the table exists (additive feature)
         try:
             conn.execute("DELETE FROM whisper_replies WHERE whisper_id=?", (whisper_id,))
         except Exception:
@@ -389,7 +335,6 @@ def clear_whisper_readers(whisper_id):
 
 
 def add_reader(whisper_id, user_id):
-    """Insert reader (idempotent). Kept for backward compatibility."""
     add_reader_if_new(whisper_id, user_id)
 
 
@@ -398,17 +343,14 @@ def add_reader_if_new(whisper_id: str, user_id: int) -> bool:
     Insert the reader record atomically.
 
     Returns:
-        True  — first time this user reads this whisper (record inserted).
-        False — user already read it before (INSERT OR IGNORE skipped).
+        True  - first time this user reads this whisper (record inserted).
+        False - user already read it before (INSERT OR IGNORE skipped).
 
-    Uses SQLite changes() so the decision is atomic — no race condition
+    Uses SQLite changes() so the decision is atomic - no race condition
     even under concurrent access with WAL journal mode.
-<<<<<<< HEAD
-=======
 
     NOTE: This low-level function does NOT manage the is_locked flag.
     Use record_whisper_read() instead when you want type-aware locking.
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     """
     with get_conn() as conn:
         conn.execute(
@@ -420,25 +362,23 @@ def add_reader_if_new(whisper_id: str, user_id: int) -> bool:
     return inserted == 1
 
 
-<<<<<<< HEAD
-=======
 def record_whisper_read(whisper_id: str, user_id: int) -> bool:
     """
     Register a reader and conditionally auto-lock the whisper based on its type.
 
     Rules
     -----
-    * everyone  — reader is registered; is_locked is **never** touched.
+    * everyone  - reader is registered; is_locked is **never** touched.
                   The whisper stays open forever so any new reader can join.
-    * first_three — reader is registered; is_locked is set to 1 **only**
+    * first_three - reader is registered; is_locked is set to 1 **only**
                     when the reader count reaches 3 or more.
                     Below 3 the whisper stays open for the next reader.
-    * first_one, custom  — no auto-lock (permission gating is handled
+    * first_one, custom  - no auto-lock (permission gating is handled
                            exclusively by can_read_whisper).
 
     Returns:
-        True  — first time this user reads this whisper.
-        False — user already read it before.
+        True  - first time this user reads this whisper.
+        False - user already read it before.
     """
     is_new = add_reader_if_new(whisper_id, user_id)
     if not is_new:
@@ -450,7 +390,6 @@ def record_whisper_read(whisper_id: str, user_id: int) -> bool:
 
     wtype = w["whisper_type"]
     if wtype == "everyone":
-        # ── NEVER lock an "everyone" whisper ──────────────────────────────
         return True
 
     if wtype == "first_three":
@@ -464,11 +403,9 @@ def record_whisper_read(whisper_id: str, user_id: int) -> bool:
                 conn.commit()
         return True
 
-    # first_one, custom — no auto-lock (can_read_whisper gates access)
     return True
 
 
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 def get_readers(whisper_id):
     with get_conn() as conn:
         return conn.execute(
@@ -498,7 +435,6 @@ def add_curious(whisper_id, user_id):
 
 
 def get_curious_ones(whisper_id):
-    """Return curious users with tried_at timestamp included."""
     with get_conn() as conn:
         return conn.execute(
             "SELECT co.user_id, co.tried_at, u.username, u.first_name "
@@ -539,10 +475,6 @@ def can_read_whisper(whisper_id, user_id):
     return False, "unknown"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Settings
-# ─────────────────────────────────────────────────────────────────────────────
-
 def get_setting(key):
     with get_conn() as conn:
         row = conn.execute(
@@ -578,10 +510,6 @@ def set_setting(key, value):
         conn.commit()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Mandatory channels
-# ─────────────────────────────────────────────────────────────────────────────
-
 def get_mandatory_channels():
     with get_conn() as conn:
         return conn.execute("SELECT * FROM mandatory_channels").fetchall()
@@ -604,10 +532,6 @@ def remove_mandatory_channel(channel_id):
         )
         conn.commit()
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Statistics
-# ─────────────────────────────────────────────────────────────────────────────
 
 def get_stats():
     with get_conn() as conn:
@@ -638,7 +562,6 @@ def get_stats():
 
 
 def get_user_stats(user_id):
-    """Personal statistics for one user."""
     with get_conn() as conn:
         sent = conn.execute(
             "SELECT COUNT(*) FROM whispers WHERE sender_id=?", (user_id,)
@@ -684,12 +607,7 @@ def get_user_stats(user_id):
         }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Auto-delete scheduler helper
-# ─────────────────────────────────────────────────────────────────────────────
-
 def delete_expired_whispers():
-    """Delete whispers whose auto_delete_at has passed. Returns count deleted."""
     now = datetime.utcnow().isoformat()
     with get_conn() as conn:
         rows = conn.execute(

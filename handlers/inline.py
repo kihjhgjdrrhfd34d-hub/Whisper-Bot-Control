@@ -11,8 +11,6 @@ from database import create_whisper, get_setting, upsert_user
 
 logger = logging.getLogger(__name__)
 
-# ── Whisper type definitions ──────────────────────────────────────────────────
-# (wtype, max_readers, menu_title, menu_desc, group_message_text)
 FOUR_OPTIONS = [
     ("first_one",   1, "همسة لأول شخص",          "🔒 يقرأها أول شخص فقط",      "هذه همسه سريه لاول شخص يقوم بقرأتها"),
     ("everyone",    0, "همسة للجميع",             "🌍 يمكن لأي شخص قراءتها",    "هذه الهمسه للجميع"),
@@ -20,16 +18,8 @@ FOUR_OPTIONS = [
     ("custom",      0, "همسة بالأيدي او اليوزر",  "🎯 مخصصة لشخص معين",         "هذه همسه سريه مخصصة"),
 ]
 
-# Whisper types that receive a control-panel DM after being sent
 CONTROL_PANEL_TYPES = {"custom"}
 
-<<<<<<< HEAD
-
-def _read_button(whisper_id: str) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("اضغط للرؤيه 🔒", callback_data=f"read:{whisper_id}"))
-=======
-# ── Destructive (self-destructing) variants ────────────────────────────────────
 DESTRUCTIVE_OPTIONS = [
     ("first_one",   1, "💣 همسة تدميرية لشخص",          "💥 تُحذف بعد قراءتها",      "💣 همسة تدميرية لشخص واحد"),
     ("first_three", 3, "💣 همسة تدميرية لـ 3 أشخاص",    "💥 تُحذف بعد ثالث قارئ",    "💣 همسة تدميرية لـ 3 أشخاص"),
@@ -41,7 +31,6 @@ def _read_button(whisper_id: str, bot_username: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(InlineKeyboardButton("اضغط للرؤيه 🔒", callback_data=f"read:{whisper_id}"))
     kb.add(InlineKeyboardButton("💬 رد على الهمسة", url=f"https://t.me/{bot_username}?start=reply_{whisper_id}"))
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     return kb
 
 
@@ -56,7 +45,6 @@ def _auto_hours() -> int:
 
 def register_inline_handlers(bot: telebot.TeleBot):
 
-    # ── Inline query handler ─────────────────────────────────────────────────
     @bot.inline_handler(func=lambda query: True)
     def handle_inline(query: telebot.types.InlineQuery):
         user = query.from_user
@@ -65,14 +53,11 @@ def register_inline_handlers(bot: telebot.TeleBot):
         except Exception as e:
             logger.warning(f"upsert_user: {e}")
 
-<<<<<<< HEAD
-=======
         try:
             bot_username = bot.get_me().username
         except Exception:
-            bot_username = bot.token.split(":")[0]  # fallback
+            bot_username = bot.token.split(":")[0]
 
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
         if get_setting("bot_active") != "1":
             try:
                 bot.answer_inline_query(
@@ -87,7 +72,6 @@ def register_inline_handlers(bot: telebot.TeleBot):
 
         raw = query.query.strip()
 
-        # ── Empty query: show placeholder ─────────────────────────────────
         if not raw:
             username = f"@{user.username}" if user.username else user.first_name or "مستخدم"
             placeholder = InlineQueryResultArticle(
@@ -110,7 +94,6 @@ def register_inline_handlers(bot: telebot.TeleBot):
         hours = _auto_hours()
         results = []
 
-        # ── Auto-detect `@user text` or `ID text` pattern → custom whisper ──
         _TARGET_RE = re.compile(r'^(@\w+|[1-9]\d{4,})\s+([\s\S]+)$')
         m = _TARGET_RE.match(raw)
         if m:
@@ -135,15 +118,7 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     else whisper_body
                 )
                 group_msg_targeted = f"هذه همسة سرية لـ {display_target} 🤫"
-<<<<<<< HEAD
-                targeted_kb = InlineKeyboardMarkup()
-                targeted_kb.add(InlineKeyboardButton(
-                    "اضغط للرؤيه 🔒",
-                    callback_data=f"read:{wid_targeted}",
-                ))
-=======
                 targeted_kb = _read_button(wid_targeted, bot_username)
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
                 results.append(
                     InlineQueryResultArticle(
                         id=f"custom:{wid_targeted}",
@@ -158,7 +133,6 @@ def register_inline_handlers(bot: telebot.TeleBot):
             except Exception as e:
                 logger.error(f"inline targeted build: {e}")
 
-        # ── Four standard options ─────────────────────────────────────────
         for wtype, max_r, title, desc, group_text in FOUR_OPTIONS:
             try:
                 targets = []
@@ -196,15 +170,6 @@ def register_inline_handlers(bot: telebot.TeleBot):
                 )
 
                 if wtype == "custom" and target_label:
-<<<<<<< HEAD
-                    btn_text = f"همسة لـ {target_label} 🔒"
-                    btn_kb = InlineKeyboardMarkup()
-                    btn_kb.add(InlineKeyboardButton(
-                        btn_text, callback_data=f"read:{wid}"
-                    ))
-                else:
-                    btn_kb = _read_button(wid)
-=======
                     btn_kb = InlineKeyboardMarkup(row_width=1)
                     btn_kb.add(InlineKeyboardButton(
                         f"همسة لـ {target_label} 🔒", callback_data=f"read:{wid}"
@@ -214,7 +179,6 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     ))
                 else:
                     btn_kb = _read_button(wid, bot_username)
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
                 results.append(
                     InlineQueryResultArticle(
@@ -234,9 +198,6 @@ def register_inline_handlers(bot: telebot.TeleBot):
             except Exception as e:
                 logger.error(f"inline build [{wtype}]: {e}")
 
-<<<<<<< HEAD
-=======
-        # ── Destructive options ───────────────────────────────────────────
         for wtype, max_r, title, desc, group_text in DESTRUCTIVE_OPTIONS:
             try:
                 wid = create_whisper(
@@ -263,36 +224,24 @@ def register_inline_handlers(bot: telebot.TeleBot):
             except Exception as e:
                 logger.error(f"inline destructive build [{wtype}]: {e}")
 
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
         try:
             bot.answer_inline_query(query.id, results, cache_time=0, is_personal=True)
         except Exception as e:
             logger.error(f"answer_inline_query (typed): {e}")
 
-    # ── Chosen inline result handler ─────────────────────────────────────────
     @bot.chosen_inline_handler(func=lambda r: True)
     def handle_chosen(result: telebot.types.ChosenInlineResult):
-        """
-        Send the whisper control panel to the sender ONLY for custom whispers.
-        Public / first_one / first_three whispers do NOT get a control panel.
-        """
         user = result.from_user
         result_id = result.result_id
 
         if ":" not in result_id:
             return
 
-<<<<<<< HEAD
-        wtype, wid = result_id.split(":", 1)
-=======
-        # Detect destructive prefix
         if result_id.startswith("destructive:"):
             _, wtype, wid = result_id.split(":", 2)
         else:
             wtype, wid = result_id.split(":", 1)
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
-        # ── Gate: only custom whispers get the control panel ──────────────
         if wtype not in CONTROL_PANEL_TYPES:
             return
 
@@ -314,10 +263,7 @@ def register_inline_handlers(bot: telebot.TeleBot):
             InlineKeyboardButton("🧹 مسح المهموس", callback_data=f"clear:{wid}"),
             InlineKeyboardButton("👀 الفضوليون",   callback_data=f"curious:{wid}"),
         )
-<<<<<<< HEAD
-=======
 
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
         try:
             bot.send_message(
                 user.id,

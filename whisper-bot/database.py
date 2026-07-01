@@ -190,14 +190,12 @@ def clear_whisper_readers(whisper_id):
 
 
 def add_reader(whisper_id, user_id):
-<<<<<<< HEAD
     with get_conn() as conn:
         conn.execute("""
             INSERT OR IGNORE INTO whisper_readers (whisper_id, user_id)
             VALUES (?, ?)
         """, (whisper_id, user_id))
         conn.commit()
-=======
     """Insert reader (idempotent). Kept for backward compatibility."""
     add_reader_if_new(whisper_id, user_id)
 
@@ -254,7 +252,6 @@ def record_whisper_read(whisper_id: str, user_id: int) -> bool:
         return True
 
     return True
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
 
 def get_readers(whisper_id):

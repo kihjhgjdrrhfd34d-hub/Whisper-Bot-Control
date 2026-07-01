@@ -1,10 +1,8 @@
 whispers.db
+*.db
 logs/
 venv/
 __pycache__/
 *.pyc
-logs/
-whispers.db
-venv/
-logs/
-*.db
+.pytest_cache/
+whisper-bot/

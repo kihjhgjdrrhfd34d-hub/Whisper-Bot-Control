@@ -6,19 +6,11 @@ from database import (
     upsert_user, get_setting, is_banned, get_mandatory_channels,
     update_whisper_content, set_setting, add_mandatory_channel,
     search_users, ban_user, unban_user,
-<<<<<<< HEAD
-    is_new_user, mark_user_started, get_stats,
-)
-from handlers.inline import register_inline_handlers
-from handlers.whisper import register_whisper_handlers
-from handlers.replies import register_reply_handlers, handle_reply_message
-=======
     is_new_user, mark_user_started, get_stats, get_whisper,
 )
 from handlers.inline import register_inline_handlers
 from handlers.whisper import register_whisper_handlers
 from handlers.replies import register_reply_handlers, handle_reply_message, whisper_actions_keyboard
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 from handlers.admin import (
     register_admin_handlers, do_broadcast, is_admin, admin_main_keyboard,
 )
@@ -195,13 +187,10 @@ def start_cmd(msg: telebot.types.Message):
     else:
         _enterprise_on_every_start(user.id)
 
-<<<<<<< HEAD
-=======
     # ── Extract payload from deep link (e.g. /start <whisper_id>) ────────
     parts = msg.text.split()
     payload = parts[1] if len(parts) > 1 else None
 
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     # ── Guard: banned ──────────────────────────────────────────────────────
     if is_banned(user.id):
         bot.send_message(msg.chat.id, "🚫 أنت محظور من استخدام هذا البوت.")
@@ -232,8 +221,6 @@ def start_cmd(msg: telebot.types.Message):
             )
             return
 
-<<<<<<< HEAD
-=======
     # ── Deep link: reply to whisper (e.g. /start reply_abc123) ─────────
     if payload and payload.startswith("reply_"):
         whisper_id = payload[len("reply_"):]
@@ -266,7 +253,6 @@ def start_cmd(msg: telebot.types.Message):
             bot.send_message(msg.chat.id, "❌ الهمسة غير موجودة.")
         return
 
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     text, kb = _main_menu_text_and_kb(bot, user)
     bot.send_message(msg.chat.id, text, parse_mode="Markdown", reply_markup=kb)
 
@@ -382,12 +368,8 @@ def check_membership_cb(call: telebot.types.CallbackQuery):
 
 @bot.message_handler(
     func=lambda m: True,
-<<<<<<< HEAD
-    content_types=["text", "photo", "video", "document", "voice", "audio", "sticker", "animation", "contact", "location"],
-=======
     content_types=["text", "photo", "video", "document", "voice", "audio", "sticker",
                    "animation", "contact", "location"],
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 )
 def handle_messages(msg: telebot.types.Message):
     user = msg.from_user

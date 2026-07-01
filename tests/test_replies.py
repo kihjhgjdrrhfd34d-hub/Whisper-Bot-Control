@@ -408,8 +408,6 @@ class TestHandleReplyMessage(unittest.TestCase):
         self.assertEqual(reply["content"], "a proper reply")
         self.assertEqual(reply["sender_id"], 90011)
 
-<<<<<<< HEAD
-=======
     def test_rejects_when_replies_disabled(self):
         """Pending state but replies disabled → consumed, no reply created."""
         import database
@@ -435,7 +433,6 @@ class TestHandleReplyMessage(unittest.TestCase):
         self.assertEqual(count_replies(wid), 0)
         database.set_setting("whisper_replies_enabled", "1")  # restore
 
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 10. _extract_media helper
@@ -515,12 +512,9 @@ class TestExtractMedia(unittest.TestCase):
 
 class TestSupportedMedia(unittest.TestCase):
     def test_all_required_types_present(self):
-<<<<<<< HEAD
         required = {"photo", "video", "voice", "audio", "document", "sticker", "animation", "contact", "location"}
-=======
         required = {"photo", "video", "voice", "audio", "document", "sticker",
                      "animation", "contact", "location"}
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
         self.assertEqual(required, SUPPORTED_MEDIA)
 
     def test_live_location_not_supported(self):

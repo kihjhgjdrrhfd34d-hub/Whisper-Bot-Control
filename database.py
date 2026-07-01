@@ -50,10 +50,7 @@ def init_db():
                 is_locked       INTEGER DEFAULT 0,
                 created_at      TEXT DEFAULT (datetime('now')),
                 auto_delete_at  TEXT,
-<<<<<<< HEAD
-=======
                 is_destructive  INTEGER DEFAULT 0,
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
                 FOREIGN KEY (sender_id) REFERENCES users(user_id)
             );
 
@@ -153,15 +150,12 @@ def _run_migrations():
                     (key, val),
                 )
 
-<<<<<<< HEAD
-=======
         # Migration 4: add is_destructive column to whispers
         if "whispers" in tables:
             cols = [r[1] for r in conn.execute("PRAGMA table_info(whispers)").fetchall()]
             if "is_destructive" not in cols:
                 conn.execute("ALTER TABLE whispers ADD COLUMN is_destructive INTEGER DEFAULT 0")
 
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
         # Migration 3: add performance indexes only when tables exist
         existing_tables = {r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
@@ -293,12 +287,8 @@ def search_users(query):
 
 def create_whisper(
     sender_id, content, whisper_type,
-<<<<<<< HEAD
-    target_users=None, max_readers=0, auto_delete_hours=0
-=======
     target_users=None, max_readers=0, auto_delete_hours=0,
     is_destructive=False,
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 ):
     wid = str(uuid.uuid4())[:12]
     targets = json.dumps(target_users or [])
@@ -312,17 +302,10 @@ def create_whisper(
             """
             INSERT INTO whispers
                 (whisper_id, sender_id, content, whisper_type,
-<<<<<<< HEAD
-                 target_users, max_readers, auto_delete_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (wid, sender_id, content, whisper_type, targets, max_readers, auto_delete_at),
-=======
                  target_users, max_readers, auto_delete_at, is_destructive)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (wid, sender_id, content, whisper_type, targets, max_readers, auto_delete_at, int(is_destructive)),
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
         )
         conn.commit()
     return wid
@@ -359,8 +342,6 @@ def toggle_whisper_lock(whisper_id):
         return new_state
 
 
-<<<<<<< HEAD
-=======
 def lock_whisper(whisper_id):
     """Set is_locked = 1 on a whisper unconditionally."""
     with get_conn() as conn:
@@ -368,7 +349,6 @@ def lock_whisper(whisper_id):
         conn.commit()
 
 
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 def delete_whisper(whisper_id):
     with get_conn() as conn:
         conn.execute("DELETE FROM whisper_readers WHERE whisper_id=?", (whisper_id,))
@@ -403,12 +383,9 @@ def add_reader_if_new(whisper_id: str, user_id: int) -> bool:
 
     Uses SQLite changes() so the decision is atomic — no race condition
     even under concurrent access with WAL journal mode.
-<<<<<<< HEAD
-=======
 
     NOTE: This low-level function does NOT manage the is_locked flag.
     Use record_whisper_read() instead when you want type-aware locking.
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     """
     with get_conn() as conn:
         conn.execute(
@@ -420,8 +397,6 @@ def add_reader_if_new(whisper_id: str, user_id: int) -> bool:
     return inserted == 1
 
 
-<<<<<<< HEAD
-=======
 def record_whisper_read(whisper_id: str, user_id: int) -> bool:
     """
     Register a reader and conditionally auto-lock the whisper based on its type.
@@ -468,7 +443,6 @@ def record_whisper_read(whisper_id: str, user_id: int) -> bool:
     return True
 
 
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 def get_readers(whisper_id):
     with get_conn() as conn:
         return conn.execute(

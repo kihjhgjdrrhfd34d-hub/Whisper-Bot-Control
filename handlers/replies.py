@@ -1,103 +1,22 @@
 """
-<<<<<<< HEAD
-handlers/replies.py — Two-way Whisper Conversation System.
-
-Architecture
-------------
-Replies form a two-way conversation between the original whisper sender and
-the original recipient (first reader). Every reply uses the same whisper_id.
-This is NOT anonymous messaging — both participants know who they are
-conversing with.
-
-Flow
-----
-1. User A sends a whisper → User B opens it.
-   User B immediately receives a DM with:
-     💬 Reply
-     📜 Conversation (if replies exist)
-
-2. User B presses 💬 Reply, sends content.
-   Reply is saved under whisper_id and delivered to User A.
-   User A receives:
-     "You received a reply to your whisper."
-     💬 Reply
-     📜 Conversation
-
-3. User A presses 💬 Reply, sends content.
-   Reply goes back to User B.
-
-4. Continue forever.
-
-Permissions
------------
-Only the original sender and the first reader may reply.
-Nobody else.
-
-State key used in user_states
------------------------------
-{"action": "pending_whisper_reply", "whisper_id": str}
-
-Supported media
----------------
-text, photo, video, voice, audio, document, sticker, animation, contact, location
-"""
-
-=======
 handlers/replies.py — نظام المحادثة ثنائية الاتجاه للهمسات.
 
-البنية
------------
-جميع الردود مرتبطة بالهمسة الأم (whisper_id). هذا ليس تطبيق محادثة؛
+جميع الردود مرتبطة بالهمسة الأم (whisper_id). ليس هذا تطبيق محادثة؛
 كل رد يشير إلى whisper_id محدد.
 
-تدفق المحادثة
------------------
-1. المستخدم ب يقرأ همسة مخصصة → يستلم رسالة خاصة بمحتوى الهمسة
-   مع أزرار "↩️ الرد" (و "📜 المحادثة" إن وُجدت ردود).
+التدفق:
+1. المستخدم ب يقرأ همسة → يستلم رسالة خاصة مع أزرار الرد والمحادثة
+2. المستخدم ب يضغط ↩️ الرد → يخزن البوت حالة pending_whisper_reply
+3. المستخدم ب يرسل رسالة → البوت يحفظ الرد ويرسله للمرسل الأصلي
+4. المرسل الأصلي يستلم الرد مع أزرار الرد والمحادثة
 
-2. المستخدم ب يضغط ↩️ الرد.
-   الكولباك: ``wsp_reply:whisper:<whisper_id>``
-   البوت يتحقق من الصلاحيات، ثم يخزّن حالة معلقة:
-       user_states[user_b_id] = {
-           "action": "pending_whisper_reply",
-           "whisper_id": "<id>",
-       }
-   تُعَدَّل رسالة الهمسة نفسها (وليس إرسال رسالة جديدة) لعرض "✏️ أرسل ردّك…"
-
-3. المستخدم ب يرسل رسالة (نص / صورة / فيديو / صوت / مستند / ملصق / متحركة / جهة اتصال / موقع).
-   معالج الرسائل في bot.py يستدعي handle_reply_message().
-   البوت يحفظ الرد في قاعدة البيانات، ثم يعيد توجيهه بهوية المرسل الحقيقية
-   إلى مرسل الهمسة الأصلي مع زري ↩️ الرد و 📜 المحادثة لتمكينه من الرد.
-
-4. المستخدم أ يضغط ↩️ الرد على إشعار الرد الوارد.
-   نفس التدفق — المستخدم أ يصبح في حالة pending_whisper_reply.
-
-5. تستمر السلسلة في كلا الاتجاهين تحت نفس whisper_id.
-   فقط المرسل الأصلي والمستقبل الأصلي يمكنهما المشاركة.
-
-الهوية
--------
-الردود ليست مجهولة أبداً. يُعرض اسم المرسل (و @username إن وُجد) في كل رد.
-
-سجل المحادثة
------------------
-زر 📜 المحادثة يعرض جميع الردود بترتيب زمني مع أسماء المرسلين والوسائط.
+الصلاحيات: فقط المرسل الأصلي والقارئ الأول يمكنهم الرد.
+الهوية: الردود ليست مجهولة أبداً.
 """
-
 import json
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-<<<<<<< HEAD
-from database import get_whisper, is_banned, get_setting
-from database.replies import (
-    can_reply_to_whisper,
-    create_reply,
-    get_replies,
-    get_reply_recipient,
-=======
 from config import ADMIN_IDS
 from database import get_whisper, is_banned, get_setting, get_user
 from database.replies import (
@@ -107,35 +26,12 @@ from database.replies import (
     get_reply_sender,
     get_replies,
     count_replies,
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     MAX_REPLIES_PER_WHISPER,
     SUPPORTED_MEDIA,
 )
 
 logger = logging.getLogger(__name__)
 
-<<<<<<< HEAD
-_REPLY_PREFIX = "wsp_reply:"
-_CONV_PREFIX = "wsp_conv:"
-_MAX_CAPTION = 200
-
-
-def reply_button(whisper_id: str) -> InlineKeyboardButton:
-    return InlineKeyboardButton("💬 Reply", callback_data=f"{_REPLY_PREFIX}{whisper_id}")
-
-
-def conversation_button(whisper_id: str) -> InlineKeyboardButton:
-    return InlineKeyboardButton("📜 Conversation", callback_data=f"{_CONV_PREFIX}{whisper_id}")
-
-
-def reply_keyboard(whisper_id: str) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup()
-    kb.add(reply_button(whisper_id))
-    replies = get_replies(whisper_id)
-    if replies:
-        kb.add(conversation_button(whisper_id))
-=======
-# ── بادئات الكولباك ──────────────────────────────────────────────────────────
 _REPLY_PREFIX = "wsp_reply:"
 _REPLY_WHISPER_PREFIX = "wsp_reply:whisper:"
 _REPLY_REPLY_PREFIX  = "wsp_reply:reply:"
@@ -143,10 +39,6 @@ _CONV_PREFIX = "wsp_conv:"
 _CLOSE_CONV_PREFIX = "close_conv:"
 _MAX_CAPTION = 200
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# دوال مساعدة للأزرار
-# ─────────────────────────────────────────────────────────────────────────────
 
 def reply_button(identifier: str, is_reply: bool = False) -> InlineKeyboardButton:
     if is_reply:
@@ -171,7 +63,6 @@ def whisper_actions_keyboard(whisper_id: str) -> InlineKeyboardMarkup:
         kb.add(reply_button(whisper_id), btn_conv)
     else:
         kb.add(reply_button(whisper_id))
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     return kb
 
 
@@ -183,14 +74,11 @@ def _is_conv_callback(data: str) -> bool:
     return data.startswith(_CONV_PREFIX)
 
 
-<<<<<<< HEAD
-=======
 def _is_close_conv_callback(data: str) -> bool:
     return data.startswith(_CLOSE_CONV_PREFIX)
 
 
 def _format_time(iso_str) -> str:
-    """استخراج الوقت (HH:MM) من نص ISO زمني."""
     if not iso_str:
         return ""
     try:
@@ -209,46 +97,11 @@ def _get_sender_display(user_id: int) -> str:
     return name
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# بداية تدفق الرد: معالج الكولباك
-# ─────────────────────────────────────────────────────────────────────────────
-
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 def _handle_reply_callback(
     bot: telebot.TeleBot,
     call: telebot.types.CallbackQuery,
     user_states: dict,
 ) -> None:
-<<<<<<< HEAD
-    user = call.from_user
-    whisper_id = call.data[len(_REPLY_PREFIX):]
-
-    if get_setting("whisper_replies_enabled") != "1":
-        bot.answer_callback_query(
-            call.id, "Replies are currently disabled.", show_alert=True
-        )
-        return
-
-    if is_banned(user.id):
-        bot.answer_callback_query(
-            call.id, "You are banned.", show_alert=True
-        )
-        return
-
-    if get_setting("bot_active") != "1":
-        bot.answer_callback_query(
-            call.id, "Bot is currently offline.", show_alert=True
-        )
-        return
-
-=======
-    """
-    عند الضغط على ↩️ الرد في أي رسالة همسة.
-    - تبقى رسالة الهمسة كما هي دون تعديل.
-    - يتم تخزين حالة معلقة فقط.
-    - المستخدم يكتب ردّه مباشرة في محادثة البوت.
-    - الضغط مرة أخرى يُلغي حالة الرد المعلقة.
-    """
     user = call.from_user
     data = call.data
 
@@ -275,56 +128,31 @@ def _handle_reply_callback(
         )
         return
 
-    # ── التحقق: الردود مفعّلة ───────────────────────────────────
     if get_setting("whisper_replies_enabled") != "1":
         bot.answer_callback_query(
             call.id, "💬 الردود معطّلة.", show_alert=True
         )
         return
 
-    # ── التحقق: غير محظور ──────────────────────────────────────
     if is_banned(user.id):
         bot.answer_callback_query(
             call.id, "🚫 أنت محظور.", show_alert=True
         )
         return
 
-    # ── التحقق: البوت نشط ──────────────────────────────────────
     if get_setting("bot_active") != "1":
         bot.answer_callback_query(
             call.id, "⚠️ البوت متوقف.", show_alert=True
         )
         return
 
-    # ── التحقق: الهمسة موجودة ──────────────────────────────────
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     w = get_whisper(whisper_id)
     if not w:
         bot.answer_callback_query(
-            call.id,
-<<<<<<< HEAD
-            "This whisper no longer exists.",
-=======
-            "❌ الهمسة غير موجودة أو تم حذفها.",
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
-            show_alert=True,
+            call.id, "❌ الهمسة غير موجودة أو تم حذفها.", show_alert=True
         )
         return
 
-<<<<<<< HEAD
-    ok, reason = can_reply_to_whisper(whisper_id, user.id)
-    if not ok:
-        msg_map = {
-            "whisper_not_found": "Whisper not found.",
-            "whisper_locked":    "Whisper is locked. Cannot reply.",
-            "not_participant":   "You are not part of this conversation.",
-            "reply_cap_reached": f"Reply limit ({MAX_REPLIES_PER_WHISPER}) reached.",
-        }
-        bot.answer_callback_query(
-            call.id,
-            msg_map.get(reason, "You cannot reply to this whisper."),
-=======
-    # ── التحقق: الصلاحية ───────────────────────────────────────
     ok, reason = can_reply_to_whisper(whisper_id, user.id)
     if not ok:
         msg_map = {
@@ -336,31 +164,26 @@ def _handle_reply_callback(
         bot.answer_callback_query(
             call.id,
             msg_map.get(reason, "❌ لا يمكنك الرد على هذه الهمسة."),
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
             show_alert=True,
         )
         return
 
-<<<<<<< HEAD
-    user_states[user.id] = {
+    existing = user_states.get(user.id)
+    if existing and existing.get("action") == "pending_whisper_reply" \
+            and existing.get("whisper_id") == whisper_id:
+        user_states.pop(user.id, None)
+        bot.answer_callback_query(call.id, "❌ أُلغي الرد.", show_alert=False)
+        return
+
+    state = {
         "action": "pending_whisper_reply",
         "whisper_id": whisper_id,
     }
+    if parent_reply_id:
+        state["parent_reply_id"] = parent_reply_id
+    user_states[user.id] = state
 
-    bot.answer_callback_query(call.id)
-
-    cancel_kb = InlineKeyboardMarkup()
-    cancel_kb.add(InlineKeyboardButton("Cancel", callback_data="cancel_action"))
-    try:
-        bot.send_message(
-            user.id,
-            "Send your reply.\n\n"
-            "You can send text, photo, video, voice, audio, document, sticker, GIF, contact, or location.",
-            reply_markup=cancel_kb,
-        )
-    except Exception as exc:
-        logger.error(f"reply prompt send failed for user {user.id}: {exc}")
-        user_states.pop(user.id, None)
+    bot.answer_callback_query(call.id, "📝 أرسل ردّك الآن في البوت.", show_alert=False)
 
 
 def _handle_conv_callback(
@@ -405,129 +228,64 @@ def _handle_conv_callback(
     except Exception as exc:
         logger.error(f"conv view send failed for user {user.id}: {exc}")
 
-=======
-    # ── التبديل: ضغط مرة أخرى = إلغاء ──────────────────────────
-    existing = user_states.get(user.id)
-    if existing and existing.get("action") == "pending_whisper_reply" \
-            and existing.get("whisper_id") == whisper_id:
-        user_states.pop(user.id, None)
-        bot.answer_callback_query(call.id, "❌ أُلغي الرد.", show_alert=False)
-        return
-
-    # ── تخزين الحالة المعلقة ───────────────────────────────────
-    state = {
-        "action": "pending_whisper_reply",
-        "whisper_id": whisper_id,
-    }
-    if parent_reply_id:
-        state["parent_reply_id"] = parent_reply_id
-    user_states[user.id] = state
-
-    # تبقى رسالة الهمسة كما هي — المستخدم يكتب في البوت مباشرة
-    bot.answer_callback_query(call.id, "📝 أرسل ردّك الآن في البوت.", show_alert=False)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# معالج محتوى الرد (يُستدعى من bot.py)
-# ─────────────────────────────────────────────────────────────────────────────
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
 def handle_reply_message(
     bot: telebot.TeleBot,
     msg: telebot.types.Message,
     user_states: dict,
 ) -> bool:
-<<<<<<< HEAD
-=======
-    """
-    معالجة رسالة واردة عندما يكون المستخدم في حالة pending_whisper_reply.
-
-    تُرجع True إذا تم استهلاك الرسالة (لا ينبغي للمستدعي المتابعة).
-    تُرجع False إذا لم تكن هذه حالة رد معلقة (يستمر المستدعي).
-    """
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     user = msg.from_user
     state = user_states.get(user.id)
     if not state or state.get("action") != "pending_whisper_reply":
         return False
 
     whisper_id = state["whisper_id"]
-<<<<<<< HEAD
-    del user_states[user.id]
 
     w = get_whisper(whisper_id)
     if not w:
         bot.send_message(msg.chat.id, "This whisper no longer exists.")
+        del user_states[user.id]
         return True
 
-=======
     parent_reply_id = state.get("parent_reply_id")
 
-    # ── التحقق: الردود لا تزال مفعّلة ──────────────────────────
     if get_setting("whisper_replies_enabled") != "1":
         bot.send_message(msg.chat.id, "💬 الردود معطّلة.")
         del user_states[user.id]
         return True
 
-    # ── التحقق: الهمسة لا تزال موجودة ──────────────────────────
     w = get_whisper(whisper_id)
     if not w:
         bot.send_message(msg.chat.id, "❌ الهمسة لم تعد موجودة.")
         del user_states[user.id]
         return True
 
-    # ── استخراج المحتوى + الوسائط ──────────────────────────────
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     content, media_type, file_id = _extract_media(msg)
 
     if not content and not file_id:
         bot.send_message(
             msg.chat.id,
-<<<<<<< HEAD
-            "Empty message. Please send text or media.",
-        )
-        return True
-
-=======
             "⚠️ رسالة فارغة. أرسل نصاً أو وسائط.",
         )
+        del user_states[user.id]
         return True
 
-    # ── حفظ الرد ───────────────────────────────────────────────
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     reply_id = create_reply(
         whisper_id=whisper_id,
         sender_id=user.id,
         content=content,
         media_type=media_type,
         file_id=file_id,
-<<<<<<< HEAD
-=======
         parent_reply_id=parent_reply_id,
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     )
     if not reply_id:
         bot.send_message(
             msg.chat.id,
-<<<<<<< HEAD
-            "Could not save reply (limit may be reached).",
-        )
-        return True
-
-    bot.send_message(msg.chat.id, "Your reply has been sent.")
-
-    _route_reply(bot, msg, reply_id, whisper_id, user.id, w, content, media_type, file_id)
-
-    return True
-
-
-=======
             "⚠️ تعذّر حفظ الرد (قد يكون الحد الأقصى قد بَلَغ).",
         )
         del user_states[user.id]
         return True
 
-    # ── توجيه الرد إلى المستلمين ───────────────────────────────
     delivery_ok = False
     try:
         delivery_ok = _route_reply(bot, msg, reply_id, whisper_id, user.id, w,
@@ -536,7 +294,6 @@ def handle_reply_message(
         print(f"DEBUG: _route_reply exception: {exc}")
         logger.error(f"unhandled exception in _route_reply: {exc}", exc_info=True)
 
-    # ── تأكيد إرسال الرد للقارئ ────────────────────────────────
     if delivery_ok:
         try:
             bot.send_message(user.id, "✅ تم إرسال ردك بنجاح!")
@@ -552,7 +309,6 @@ def handle_reply_message(
         except Exception:
             pass
 
-    # ── إخطار الآدمن بنسخة من الرد ─────────────────────────────
     try:
         sender_display = _get_sender_display(user.id)
         admin_parts = ["📬 *رد جديد على همسة*\n"]
@@ -577,10 +333,6 @@ def handle_reply_message(
     return True
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# استعادة رسالة الهمسة
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _restore_whisper_message(
     bot: telebot.TeleBot,
     chat_id: int,
@@ -588,7 +340,6 @@ def _restore_whisper_message(
     whisper_row,
     whisper_id: str,
 ) -> None:
-    """تعديل رسالة الهمسة الخاصة لعرض محتواها الأصلي مع أزرار الإجراءات."""
     kb = whisper_actions_keyboard(whisper_id)
     try:
         bot.edit_message_text(
@@ -602,11 +353,6 @@ def _restore_whisper_message(
         pass
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# التوجيه: إعادة توجيه الرد مع هوية المرسل إلى جميع المشاركين الآخرين
-# ─────────────────────────────────────────────────────────────────────────────
-
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 def _route_reply(
     bot: telebot.TeleBot,
     original_msg: telebot.types.Message,
@@ -617,39 +363,8 @@ def _route_reply(
     content: str,
     media_type,
     file_id,
-<<<<<<< HEAD
-) -> None:
-    recipient_id = get_reply_recipient(whisper_id, replier_id)
-    if not recipient_id:
-        return
-
-    notif_header = "You received a reply to your whisper.\n\n"
-    kb = reply_keyboard(whisper_id)
-
-    try:
-        _deliver_reply(
-            bot, original_msg, recipient_id,
-            notif_header, content, media_type, file_id, kb,
-        )
-    except Exception as exc:
-        logger.error(
-            f"reply delivery failed whisper={whisper_id!r} "
-            f"recipient={recipient_id} reply={reply_id!r}: {exc}"
-        )
-=======
     parent_reply_id=None,
 ) -> bool:
-    """
-    توجيه الرد إلى المستلم الصحيح مع هوية المرسل.
-
-    التوجيه ثنائي الاتجاه:
-    - إذا وُجد parent_reply_id، يُوجَّه الرد إلى مرسل ذلك الرد الأصل
-    - وإلا، يُوجَّه الرد إلى مرسل الهمسة الأصلي
-
-    تتضمن الرسالة المُرسلة زري ↩️ الرد و 📜 المحادثة.
-
-    تُرجع True إذا نجح التوصيل إلى مستلم واحد على الأقل، False إذا فشل الكل.
-    """
     sender_display = _get_sender_display(replier_id)
     header = f"💬 *رد من:*\n{sender_display}\n\n"
 
@@ -672,7 +387,6 @@ def _route_reply(
     if not recipients:
         return False
 
-    # لوحة المفاتيح مع زري الرد والمحادثة في صف واحد
     kb = InlineKeyboardMarkup(row_width=2)
     btn_conv = conversation_button(whisper_id) if count_replies(whisper_id) > 1 else None
     if btn_conv:
@@ -695,7 +409,6 @@ def _route_reply(
                 f"recipient={recipient_id} reply={reply_id!r}: {exc}"
             )
     return success
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
 
 def _deliver_reply(
@@ -708,13 +421,6 @@ def _deliver_reply(
     file_id,
     kb: InlineKeyboardMarkup,
 ) -> None:
-<<<<<<< HEAD
-    if media_type == "photo":
-        caption = (header + content)[:1024] if content else header.rstrip()
-        bot.send_photo(recipient_id, file_id, caption=caption,
-                       parse_mode="Markdown", reply_markup=kb)
-=======
-    """إرسال محتوى الرد إلى مستلم واحد مع هوية المرسل."""
     print(f"DEBUG: Trying to send to sender_id: {recipient_id} | Type: {type(recipient_id)}")
     if recipient_id is None:
         print("DEBUG: recipient_id is None, cannot send")
@@ -723,81 +429,37 @@ def _deliver_reply(
         caption = (header + content)[:1024] if content else header.rstrip()
         bot.send_photo(recipient_id, file_id, caption=caption,
                        parse_mode=None, reply_markup=kb)
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
     elif media_type == "video":
         caption = (header + content)[:1024] if content else header.rstrip()
         bot.send_video(recipient_id, file_id, caption=caption,
-<<<<<<< HEAD
-                       parse_mode="Markdown", reply_markup=kb)
-=======
                        parse_mode=None, reply_markup=kb)
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
     elif media_type == "voice":
         bot.send_voice(recipient_id, file_id, reply_markup=kb)
         if content:
             bot.send_message(recipient_id, header + content,
-<<<<<<< HEAD
-                             parse_mode="Markdown")
-=======
                              parse_mode=None)
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
     elif media_type == "audio":
         bot.send_audio(recipient_id, file_id, reply_markup=kb)
         if content:
             bot.send_message(recipient_id, header + content,
-<<<<<<< HEAD
-                             parse_mode="Markdown")
-=======
                              parse_mode=None)
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
     elif media_type == "document":
         caption = (header + content)[:1024] if content else header.rstrip()
         bot.send_document(recipient_id, file_id, caption=caption,
-<<<<<<< HEAD
-                          parse_mode="Markdown", reply_markup=kb)
-=======
                           parse_mode=None, reply_markup=kb)
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
     elif media_type == "sticker":
         bot.send_sticker(recipient_id, file_id)
         bot.send_message(recipient_id, header.rstrip(),
-<<<<<<< HEAD
-                         parse_mode="Markdown", reply_markup=kb)
-=======
                          parse_mode=None, reply_markup=kb)
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
     elif media_type == "animation":
         caption = (header + content)[:1024] if content else header.rstrip()
         bot.send_animation(recipient_id, file_id, caption=caption,
-<<<<<<< HEAD
-                           parse_mode="Markdown", reply_markup=kb)
-
-    elif media_type == "contact":
-        phone = file_id or "Unknown"
-        text = header.rstrip() + f"\n\n📞 Contact: {phone}"
-        bot.send_message(recipient_id, text,
-                         parse_mode="Markdown", reply_markup=kb)
-
-    elif media_type == "location":
-        text = header.rstrip() + "\n\n📍 Location shared"
-        bot.send_message(recipient_id, text,
-                         parse_mode="Markdown", reply_markup=kb)
-
-    else:
-        text = header + (content or "")
-        text = text[:4096]
-        bot.send_message(recipient_id, text,
-                         parse_mode="Markdown", reply_markup=kb)
-
-
-def _extract_media(msg: telebot.types.Message):
-=======
                            parse_mode=None, reply_markup=kb)
 
     elif media_type == "contact":
@@ -826,23 +488,17 @@ def _extract_media(msg: telebot.types.Message):
                              parse_mode=None)
 
     else:
-        # رد نصي فقط
         text = header + (content or "")
         text = text[:4096]
         bot.send_message(recipient_id, text,
                          parse_mode=None, reply_markup=kb)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# سجل المحادثة
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _handle_conversation_callback(
     bot: telebot.TeleBot,
     call: telebot.types.CallbackQuery,
     user_states: dict,
 ) -> None:
-    """عرض سجل الردود الكامل لهمسة — يُعَدِّل الرسالة الحالية."""
     user = call.from_user
     whisper_id = call.data[len(_CONV_PREFIX):]
 
@@ -869,7 +525,6 @@ def _handle_conversation_callback(
 
     bot.answer_callback_query(call.id)
 
-    # بناء نص المحادثة — الهمسة ثم الردود بالتسلسل
     lines = []
     lines.append("🤫 *الهمسة*")
     lines.append(w['content'])
@@ -908,7 +563,7 @@ def _handle_conversation_callback(
     lines.append("───────────────")
 
     conv_text = "\n".join(lines)
-    conv_text = conv_text[:4096]  # حد تليجرام
+    conv_text = conv_text[:4096]
 
     conv_kb = InlineKeyboardMarkup(row_width=2)
     conv_kb.add(
@@ -937,114 +592,7 @@ def _handle_conversation_callback(
             pass
 
 
-def _send_reply_to_user(
-    bot: telebot.TeleBot,
-    recipient_id: int,
-    sender_display: str,
-    content: str,
-    media_type,
-    file_id,
-) -> None:
-    """
-    إرسال رد واحد (نص أو وسائط) مع نسبه إلى المرسل.
-    يُستخدم عند عرض سجل المحادثة في رسالة منفصلة (حالة احتياطية).
-    """
-    header = f"💬 *{sender_display}*"
-
-    if media_type == "photo":
-        caption = header
-        if content:
-            caption += f"\n\n{content}"
-        bot.send_photo(recipient_id, file_id, caption=caption[:1024],
-                       parse_mode=None)
-
-    elif media_type == "video":
-        caption = header
-        if content:
-            caption += f"\n\n{content}"
-        bot.send_video(recipient_id, file_id, caption=caption[:1024],
-                       parse_mode=None)
-
-    elif media_type == "voice":
-        bot.send_voice(recipient_id, file_id)
-        if content:
-            bot.send_message(recipient_id, f"{header}\n\n{content}",
-                             parse_mode=None)
-        else:
-            bot.send_message(recipient_id, header, parse_mode=None)
-
-    elif media_type == "audio":
-        bot.send_audio(recipient_id, file_id)
-        if content:
-            bot.send_message(recipient_id, f"{header}\n\n{content}",
-                             parse_mode=None)
-        else:
-            bot.send_message(recipient_id, header, parse_mode=None)
-
-    elif media_type == "document":
-        caption = header
-        if content:
-            caption += f"\n\n{content}"
-        bot.send_document(recipient_id, file_id, caption=caption[:1024],
-                          parse_mode=None)
-
-    elif media_type == "sticker":
-        bot.send_sticker(recipient_id, file_id)
-        bot.send_message(recipient_id, header, parse_mode=None)
-
-    elif media_type == "animation":
-        caption = header
-        if content:
-            caption += f"\n\n{content}"
-        bot.send_animation(recipient_id, file_id, caption=caption[:1024],
-                           parse_mode=None)
-
-    elif media_type == "contact":
-        cd = json.loads(file_id)
-        bot.send_contact(
-            recipient_id,
-            phone_number=cd["phone_number"],
-            first_name=cd["first_name"],
-            last_name=cd.get("last_name", ""),
-        )
-        if content:
-            bot.send_message(recipient_id, f"{header}\n\n{content}",
-                             parse_mode=None)
-
-    elif media_type == "location":
-        loc = json.loads(file_id)
-        bot.send_location(
-            recipient_id,
-            latitude=loc["latitude"],
-            longitude=loc["longitude"],
-        )
-        if content:
-            bot.send_message(recipient_id, f"{header}\n\n{content}",
-                             parse_mode=None)
-
-    else:
-        text = header
-        if content:
-            text += f"\n\n{content}"
-        bot.send_message(recipient_id, text[:4096], parse_mode=None)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# دالة استخراج الوسائط
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _extract_media(msg: telebot.types.Message):
-    """
-    استخراج (content, media_type, file_id) من رسالة تليجرام.
-
-    content هو النص أو التعليق (قد يكون فارغاً).
-    media_type هو أحد SUPPORTED_MEDIA + animation/contact/location،
-               أو None للنص فقط.
-    file_id هو file_id الخاص بتليجرام (أو JSON للاتصال/الموقع) أو None.
-
-    للاتصال والموقع، يُخزَّن file_id كـ JSON blob.
-    """
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
     content = ""
     media_type = None
     file_id = None
@@ -1087,16 +635,6 @@ def _extract_media(msg: telebot.types.Message):
 
     elif msg.content_type == "contact":
         media_type = "contact"
-<<<<<<< HEAD
-        phone = msg.contact.phone_number if hasattr(msg.contact, 'phone_number') else ""
-        first = msg.contact.first_name if hasattr(msg.contact, 'first_name') else ""
-        last = msg.contact.last_name if hasattr(msg.contact, 'last_name') else ""
-        file_id = f"{first} {last}".strip() + f" - {phone}" if phone else f"{first} {last}".strip()
-
-    elif msg.content_type == "location":
-        media_type = "location"
-        file_id = ""
-=======
         cd = msg.contact
         file_id = json.dumps({
             "phone_number": cd.phone_number,
@@ -1111,27 +649,11 @@ def _extract_media(msg: telebot.types.Message):
             "latitude": loc.latitude,
             "longitude": loc.longitude,
         })
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
     return content, media_type, file_id
 
 
-<<<<<<< HEAD
 def register_reply_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
-=======
-# ─────────────────────────────────────────────────────────────────────────────
-# تسجيل المعالجات
-# ─────────────────────────────────────────────────────────────────────────────
-
-def register_reply_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
-    """
-    تسجيل معالجات كولباك الرد والمحادثة والإغلاق في البوت.
-
-    معالج الرسائل غير مُسجَّل هنا — إنه مدمج في handle_messages()
-    في bot.py للحفاظ على ترتيب المعالجات وضمان فحص حالة الرد
-    قبل الحالات الأخرى.
-    """
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
 
     @bot.callback_query_handler(func=lambda c: _is_reply_callback(c.data))
     def reply_callback(call: telebot.types.CallbackQuery):
@@ -1141,11 +663,7 @@ def register_reply_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             logger.error(f"reply_callback unhandled: {exc}", exc_info=True)
             try:
                 bot.answer_callback_query(
-<<<<<<< HEAD
-                    call.id, "An unexpected error occurred. Try again.", show_alert=True
-=======
                     call.id, "⚠️ حدث خطأ غير متوقع.", show_alert=True
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
                 )
             except Exception:
                 pass
@@ -1153,21 +671,11 @@ def register_reply_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
     @bot.callback_query_handler(func=lambda c: _is_conv_callback(c.data))
     def conv_callback(call: telebot.types.CallbackQuery):
         try:
-<<<<<<< HEAD
-            _handle_conv_callback(bot, call)
-=======
             _handle_conversation_callback(bot, call, user_states)
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
         except Exception as exc:
             logger.error(f"conv_callback unhandled: {exc}", exc_info=True)
             try:
                 bot.answer_callback_query(
-<<<<<<< HEAD
-                    call.id, "An unexpected error occurred. Try again.", show_alert=True
-                )
-            except Exception:
-                pass
-=======
                     call.id, "⚠️ حدث خطأ غير متوقع.", show_alert=True
                 )
             except Exception:
@@ -1175,7 +683,6 @@ def register_reply_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
 
     @bot.callback_query_handler(func=lambda c: _is_close_conv_callback(c.data))
     def close_conv_callback(call: telebot.types.CallbackQuery):
-        """إغلاق المحادثة — استعادة رسالة الهمسة الأصلية."""
         whisper_id = call.data[len(_CLOSE_CONV_PREFIX):]
         w = get_whisper(whisper_id)
         if w:
@@ -1187,4 +694,3 @@ def register_reply_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             except Exception as exc:
                 logger.error(f"close_conv restore failed: {exc}")
         bot.answer_callback_query(call.id, "✅ تم العودة.", show_alert=False)
->>>>>>> 62f1532 (First commit - إضافة نظام الهمسات التدميرية)
