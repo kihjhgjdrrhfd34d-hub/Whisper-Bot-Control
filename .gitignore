@@ -1,3 +1,5 @@
-.env
 whispers.db
 logs/
+venv/
+__pycache__/
+*.pyc
