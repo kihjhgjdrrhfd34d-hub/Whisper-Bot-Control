@@ -154,10 +154,6 @@ def register_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
             wtype = w["whisper_type"]
             opener_name = user.first_name or "مجهول"
 
-            bot_info = bot.get_me()
-            bot_username = bot_info.username
-            reply_url = f"https://t.me/{bot_username}?start=reply_{whisper_id}"
-
             should_edit = False
             kb = InlineKeyboardMarkup(row_width=1)
 
@@ -166,9 +162,6 @@ def register_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
                 if is_new_read:
                     kb.add(InlineKeyboardButton(
                         "اضغط للرؤيه 🔒", callback_data=f"read:{whisper_id}"
-                    ))
-                    kb.add(InlineKeyboardButton(
-                        "💬 رد على الهمسة", url=reply_url
                     ))
 
             elif wtype == "first_three":
@@ -182,8 +175,10 @@ def register_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
                         kb.add(InlineKeyboardButton(
                             name, callback_data=f"read:{whisper_id}"
                         ))
+                elif is_new_read:
+                    should_edit = True
                     kb.add(InlineKeyboardButton(
-                        "💬 رد على الهمسة", url=reply_url
+                        "اضغط للرؤيه 🔒", callback_data=f"read:{whisper_id}"
                     ))
 
             else:
@@ -196,9 +191,16 @@ def register_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
                     kb.add(InlineKeyboardButton(
                         name, callback_data=f"read:{whisper_id}"
                     ))
-                kb.add(InlineKeyboardButton(
-                    "💬 رد على الهمسة", url=reply_url
-                ))
+
+            # ── Add reply URL button after opening ──
+            if is_new_read:
+                try:
+                    bot_info = bot.get_me()
+                    reply_url = f"https://t.me/{bot_info.username}?start=reply_{whisper_id}"
+                    kb.add(InlineKeyboardButton("💬 رد", url=reply_url))
+                    should_edit = True
+                except Exception:
+                    pass
 
             if should_edit:
                 try:
@@ -216,16 +218,13 @@ def register_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
                 except Exception as e:
                     logger.debug(f"edit_reply_markup: {e}")
 
-            # ── Send reader DM with reply buttons ──
+            # ── Send reader DM with whisper content only (NO reply button) ──
             if is_new_read:
                 try:
-                    from handlers.replies import whisper_actions_keyboard as _wak
-                    _reader_kb = _wak(whisper_id)
                     bot.send_message(
                         user.id,
                         f"🤫 *الهمسة:*\n\n{w['content']}",
                         parse_mode="Markdown",
-                        reply_markup=_reader_kb,
                     )
                 except Exception as e:
                     logger.debug(f"send whisper to reader: {e}")
@@ -262,8 +261,7 @@ def register_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
                 except Exception:
                     pass
 
-            if is_first_ever and w["whisper_type"] != "first_one":
-                _send_reader_reply_dm(bot, user, whisper_id)
+            # Reply button is now added to the inline group message (see keyboard update above)
 
         except Exception as exc:
             logger.error(f"handle_read unhandled: {exc}", exc_info=True)

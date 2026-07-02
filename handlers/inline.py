@@ -27,10 +27,9 @@ DESTRUCTIVE_OPTIONS = [
 ]
 
 
-def _read_button(whisper_id: str, bot_username: str) -> InlineKeyboardMarkup:
+def _read_button(whisper_id: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(InlineKeyboardButton("اضغط للرؤيه 🔒", callback_data=f"read:{whisper_id}"))
-    kb.add(InlineKeyboardButton("💬 رد على الهمسة", url=f"https://t.me/{bot_username}?start=reply_{whisper_id}"))
     return kb
 
 
@@ -52,11 +51,6 @@ def register_inline_handlers(bot: telebot.TeleBot):
             upsert_user(user.id, user.username, user.first_name, user.last_name)
         except Exception as e:
             logger.warning(f"upsert_user: {e}")
-
-        try:
-            bot_username = bot.get_me().username
-        except Exception:
-            bot_username = bot.token.split(":")[0]
 
         if get_setting("bot_active") != "1":
             try:
@@ -118,7 +112,7 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     else whisper_body
                 )
                 group_msg_targeted = f"هذه همسة سرية لـ {display_target} 🤫"
-                targeted_kb = _read_button(wid_targeted, bot_username)
+                targeted_kb = _read_button(wid_targeted)
                 results.append(
                     InlineQueryResultArticle(
                         id=f"custom:{wid_targeted}",
@@ -174,11 +168,8 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     btn_kb.add(InlineKeyboardButton(
                         f"همسة لـ {target_label} 🔒", callback_data=f"read:{wid}"
                     ))
-                    btn_kb.add(InlineKeyboardButton(
-                        "💬 رد على الهمسة", url=f"https://t.me/{bot_username}?start=reply_{wid}"
-                    ))
                 else:
-                    btn_kb = _read_button(wid, bot_username)
+                    btn_kb = _read_button(wid)
 
                 results.append(
                     InlineQueryResultArticle(
@@ -209,7 +200,7 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     auto_delete_hours=hours,
                     is_destructive=True,
                 )
-                btn_kb = _read_button(wid, bot_username)
+                btn_kb = _read_button(wid)
                 results.append(
                     InlineQueryResultArticle(
                         id=f"destructive:{wtype}:{wid}",

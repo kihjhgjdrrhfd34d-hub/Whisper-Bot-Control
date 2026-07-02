@@ -230,9 +230,25 @@ def start_cmd(msg: telebot.types.Message):
                 "action": "pending_whisper_reply",
                 "whisper_id": whisper_id,
             }
+            content = whisper_obj["content"]
+            if "media_type" in whisper_obj.keys():
+                media_icons = {
+                    "photo": "🖼️ صورة",
+                    "video": "🎥 فيديو",
+                    "voice": "🎤 رسالة صوتية",
+                    "audio": "🎵 ملف صوتي",
+                    "document": "📄 مستند",
+                    "location": "📍 موقع",
+                    "sticker": "😊 ملصق",
+                }
+                preview = media_icons.get(whisper_obj["media_type"], "📎 وسائط")
+                body = preview
+            else:
+                preview = content[:80] + ("..." if len(content) > 80 else "")
+                body = f"💬 {preview}"
             bot.send_message(
                 msg.chat.id,
-                f"📝 أنت الآن ترد على الهمسة رقم {whisper_id}، اكتب ردك:",
+                f"📝 أنت الآن ترد على الهمسة:\n\n{body}\n\nاكتب ردك:",
             )
         else:
             bot.send_message(msg.chat.id, "❌ الهمسة غير موجودة.")
