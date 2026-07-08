@@ -2,7 +2,7 @@ import sqlite3
 import json
 import uuid
 from datetime import datetime, timedelta
-from config import DATABASE_PATH, DEFAULT_SETTINGS
+from config import DATABASE_PATH, DEFAULT_SETTINGS, GROUP_DEFAULT_SETTINGS
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -90,6 +90,14 @@ def init_db():
                 file_id    TEXT,
                 sent_at    TEXT DEFAULT (datetime('now')),
                 sent_by    INTEGER
+            );
+
+            CREATE TABLE IF NOT EXISTS group_settings (
+                chat_id                 INTEGER PRIMARY KEY,
+                public_whispers_enabled INTEGER DEFAULT 1,
+                anonymous_enabled       INTEGER DEFAULT 1,
+                read_notifications      INTEGER DEFAULT 1,
+                auto_delete_minutes     INTEGER DEFAULT 0
             );
         """)
         # ── Indexes for hot-path queries ──────────────────────────────────
@@ -622,6 +630,43 @@ def set_setting(key, value):
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             (key, value),
+        )
+        conn.commit()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Group Settings
+# ─────────────────────────────────────────────────────────────────────────────
+
+def ensure_group_settings(chat_id):
+    """Create default group settings row if it doesn't exist yet."""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO group_settings (chat_id) VALUES (?)",
+            (chat_id,),
+        )
+        conn.commit()
+
+
+def get_group_settings(chat_id):
+    """Return all settings for a group as a dict. Creates defaults if missing."""
+    ensure_group_settings(chat_id)
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM group_settings WHERE chat_id=?", (chat_id,)
+        ).fetchone()
+        return dict(row)
+
+
+def update_group_setting(chat_id, key, value):
+    """Update a single group setting by key. Creates defaults if group missing."""
+    if key not in GROUP_DEFAULT_SETTINGS:
+        raise ValueError(f"Invalid group setting key: {key}")
+    ensure_group_settings(chat_id)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE group_settings SET {key}=? WHERE chat_id=?",
+            (value, chat_id),
         )
         conn.commit()
 

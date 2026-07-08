@@ -19,6 +19,7 @@ os.environ["BOT_TOKEN"]     = "0:test_token_placeholder"  # valid enough for tes
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import database as db
+from config import GROUP_DEFAULT_SETTINGS
 
 
 class TestDatabaseInit(unittest.TestCase):
@@ -245,6 +246,89 @@ class TestSettings(unittest.TestCase):
     def test_missing_key_returns_none(self):
         val = db.get_setting("definitely_not_a_real_key_xyz")
         self.assertIsNone(val)
+
+
+class TestGroupSettings(unittest.TestCase):
+    def setUp(self):
+        db.init_db()
+
+    def test_ensure_creates_settings(self):
+        db.ensure_group_settings(-100123456789)
+        with db.get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM group_settings WHERE chat_id=?", (-100123456789,)
+            ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["public_whispers_enabled"], 1)
+        self.assertEqual(row["anonymous_enabled"], 1)
+        self.assertEqual(row["read_notifications"], 1)
+        self.assertEqual(row["auto_delete_minutes"], 0)
+
+    def test_get_group_settings_auto_creates(self):
+        settings = db.get_group_settings(-100987654321)
+        self.assertEqual(settings["chat_id"], -100987654321)
+        self.assertEqual(settings["public_whispers_enabled"], 1)
+        self.assertEqual(settings["anonymous_enabled"], 1)
+        self.assertEqual(settings["read_notifications"], 1)
+        self.assertEqual(settings["auto_delete_minutes"], 0)
+
+    def test_get_group_settings_returns_all_keys(self):
+        settings = db.get_group_settings(-100111222333)
+        for key in GROUP_DEFAULT_SETTINGS:
+            self.assertIn(key, settings)
+        self.assertIn("chat_id", settings)
+
+    def test_update_single_setting(self):
+        chat_id = -100555666777
+        db.ensure_group_settings(chat_id)
+        db.update_group_setting(chat_id, "public_whispers_enabled", "0")
+        settings = db.get_group_settings(chat_id)
+        self.assertEqual(settings["public_whispers_enabled"], 0)
+        self.assertEqual(settings["anonymous_enabled"], 1)
+        self.assertEqual(settings["read_notifications"], 1)
+        self.assertEqual(settings["auto_delete_minutes"], 0)
+
+    def test_update_multiple_independently(self):
+        chat_id = -100888999000
+        db.update_group_setting(chat_id, "public_whispers_enabled", "0")
+        db.update_group_setting(chat_id, "anonymous_enabled", "0")
+        db.update_group_setting(chat_id, "auto_delete_minutes", "30")
+        settings = db.get_group_settings(chat_id)
+        self.assertEqual(settings["public_whispers_enabled"], 0)
+        self.assertEqual(settings["anonymous_enabled"], 0)
+        self.assertEqual(settings["read_notifications"], 1)
+        self.assertEqual(settings["auto_delete_minutes"], 30)
+
+    def test_update_non_existent_key_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            db.update_group_setting(-100000000001, "nonexistent_key", "1")
+        self.assertIn("Invalid group setting key", str(ctx.exception))
+
+    def test_multiple_groups_isolated(self):
+        db.update_group_setting(-100111, "public_whispers_enabled", "0")
+        db.update_group_setting(-100222, "public_whispers_enabled", "1")
+        g1 = db.get_group_settings(-100111)
+        g2 = db.get_group_settings(-100222)
+        self.assertEqual(g1["public_whispers_enabled"], 0)
+        self.assertEqual(g2["public_whispers_enabled"], 1)
+
+    def test_ensure_is_idempotent(self):
+        chat_id = -100333444555
+        db.ensure_group_settings(chat_id)
+        db.ensure_group_settings(chat_id)
+        db.ensure_group_settings(chat_id)
+        with db.get_conn() as conn:
+            rows = conn.execute(
+                "SELECT COUNT(*) FROM group_settings WHERE chat_id=?", (chat_id,)
+            ).fetchone()
+        self.assertEqual(rows[0], 1)
+
+    def test_update_without_explicit_ensure(self):
+        settings = db.get_group_settings(-100666777888)
+        self.assertEqual(settings["public_whispers_enabled"], 1)
+        db.update_group_setting(-100666777888, "public_whispers_enabled", "0")
+        settings = db.get_group_settings(-100666777888)
+        self.assertEqual(settings["public_whispers_enabled"], 0)
 
 
 class TestMandatoryChannels(unittest.TestCase):

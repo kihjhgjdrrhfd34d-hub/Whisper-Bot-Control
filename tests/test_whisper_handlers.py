@@ -562,9 +562,9 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
         self.assertEqual(len(notification_calls), 0,
                          "No DM notification for sender reading own whisper")
 
-    def test_public_whisper_keyboard_not_updated(self):
-        """Verify public whisper does NOT edit the group inline message
-        after a read — keyboard and message shape remain unchanged."""
+    def test_public_whisper_keyboard_updated_without_reader_names(self):
+        """Verify public whisper edits the group inline message to add the
+        reply button, but does NOT add reader name buttons."""
         bot = MagicMock()
         handlers = self._capture_handlers(bot)
 
@@ -587,13 +587,14 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
 
         read_handler(call)
 
-        # edit_message_reply_markup should NOT be called for everyone whispers
+        # edit_message_reply_markup SHOULD be called for everyone whispers
+        # (to add the reply button, but NOT reader names)
         edit_calls = [
             c for c in bot.edit_message_reply_markup.mock_calls
             if c[0] == ''
         ]
-        self.assertEqual(len(edit_calls), 0,
-                         "edit_message_reply_markup must NOT be called for everyone whispers")
+        self.assertGreaterEqual(len(edit_calls), 1,
+                         "edit_message_reply_markup must be called for everyone whispers")
 
         # The whisper stays unlocked
         w = get_whisper(self.wid)

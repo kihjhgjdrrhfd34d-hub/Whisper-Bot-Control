@@ -28,3 +28,10 @@ DEFAULT_SETTINGS = {
     "whisper_replies_enabled": "1",
     "mandatory_channels": "",
 }
+
+GROUP_DEFAULT_SETTINGS = {
+    "public_whispers_enabled": "1",
+    "anonymous_enabled": "1",
+    "read_notifications": "1",
+    "auto_delete_minutes": "0",
+}

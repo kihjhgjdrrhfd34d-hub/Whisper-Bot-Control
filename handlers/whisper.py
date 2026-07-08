@@ -256,11 +256,6 @@ def _register_callback_handlers(bot, user_states):
                 kb.add(InlineKeyboardButton(
                     "اضغط للرؤيه 🔒", callback_data=f"read:{whisper_id}"
                 ))
-                for r in readers:
-                    name = f"@{r['username']}" if r.get("username") else r.get("first_name") or "مستخدم مجهول"
-                    kb.add(InlineKeyboardButton(
-                        name, callback_data=f"read:{whisper_id}"
-                    ))
                 kb.add(InlineKeyboardButton(
                     "💬 رد على الهمسة", url=reply_url
                 ))
@@ -392,7 +387,7 @@ def _register_callback_handlers(bot, user_states):
         if is_new_read:
             _send_content_to_reader(whisper_id, w)
 
-        if is_new_read and not is_public:
+        if is_new_read:
             readers = get_readers(whisper_id)
             reader_count_val = _update_group_keyboard(whisper_id, w, readers)
             _maybe_self_destruct(whisper_id, w, is_destructive, is_new_read, reader_count_val)
