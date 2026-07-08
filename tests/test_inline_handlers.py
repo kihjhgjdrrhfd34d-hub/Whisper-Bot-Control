@@ -169,5 +169,185 @@ class TestInlineEdgeCases(unittest.TestCase):
         self.assertIn(4, targets)
 
 
+class TestPublicWhispersSetting(unittest.TestCase):
+    """Test that public_whispers_enabled setting is enforced in inline handler."""
+
+    def setUp(self):
+        _boot()
+        self.chat_id = -1001234567890
+        self.sender_id = 60201
+
+    def _capture_inline_handler(self, bot):
+        handlers = []
+        def fake_inline_handler(**kwargs):
+            def deco(f):
+                handlers.append((kwargs, f))
+                return f
+            return deco
+        bot.inline_handler = fake_inline_handler
+        return handlers
+
+    def _make_query(self, text="test whisper", chat_id=None):
+        query = MagicMock()
+        query.id = "query_1"
+        query.from_user.id = self.sender_id
+        query.from_user.username = "alice"
+        query.from_user.first_name = "Alice"
+        query.query = text
+        query.chat_type = "group" if chat_id else "sender"
+        if chat_id:
+            query._chat = MagicMock()
+            query._chat.id = chat_id
+            query._chat.type = "group"
+        else:
+            query._chat = None
+        return query
+
+    def _call_handler(self, bot, query):
+        handlers = self._capture_inline_handler(bot)
+        from handlers.inline import register_inline_handlers
+        register_inline_handlers(bot)
+        handler_func = handlers[0][1]
+        handler_func(query)
+        return bot, handler_func
+
+    def _get_result_ids(self, bot):
+        if not bot.answer_inline_query.called:
+            return []
+        _, kwargs = bot.answer_inline_query.call_args
+        args = bot.answer_inline_query.call_args[0]
+        results = args[1]
+        return [r.id for r in results]
+
+    # ── Blocked public whispers ───────────────────────────────────────────
+
+    def test_everyone_filtered_when_disabled(self):
+        """When public_whispers_enabled=0, everyone options should not appear."""
+        db.update_group_setting(self.chat_id, "public_whispers_enabled", 0)
+        bot = MagicMock()
+        bot.get_me.return_value = MagicMock()
+        bot.get_me.return_value.username = "test_bot"
+        query = self._make_query(chat_id=self.chat_id)
+        self._call_handler(bot, query)
+        ids = self._get_result_ids(bot)
+        self.assertFalse(any("everyone" in rid for rid in ids),
+                         "everyone must be filtered when public_whispers_enabled=0")
+
+    def test_error_result_present_when_disabled(self):
+        """Error result should be shown when public whispers are disabled."""
+        db.update_group_setting(self.chat_id, "public_whispers_enabled", 0)
+        bot = MagicMock()
+        bot.get_me.return_value = MagicMock()
+        bot.get_me.return_value.username = "test_bot"
+        query = self._make_query(chat_id=self.chat_id)
+        self._call_handler(bot, query)
+        ids = self._get_result_ids(bot)
+        self.assertIn("error:public_disabled", ids,
+                      "error result must be present when public whispers disabled")
+
+    def test_no_everyone_db_record_when_blocked(self):
+        """No everyone whisper record should be created in DB when disabled."""
+        conn = db.get_conn()
+        before = conn.execute(
+            "SELECT COUNT(*) FROM whispers WHERE whisper_type='everyone'"
+        ).fetchone()[0]
+        conn.close()
+        db.update_group_setting(self.chat_id, "public_whispers_enabled", 0)
+        bot = MagicMock()
+        bot.get_me.return_value = MagicMock()
+        bot.get_me.return_value.username = "test_bot"
+        query = self._make_query(chat_id=self.chat_id)
+        self._call_handler(bot, query)
+        conn = db.get_conn()
+        after = conn.execute(
+            "SELECT COUNT(*) FROM whispers WHERE whisper_type='everyone'"
+        ).fetchone()[0]
+        conn.close()
+        self.assertEqual(after, before,
+                         "no everyone whisper records should be created when setting is disabled")
+
+    # ── Allowed public whispers ──────────────────────────────────────────
+
+    def test_everyone_included_when_enabled(self):
+        """When public_whispers_enabled=1, everyone options should appear."""
+        db.update_group_setting(self.chat_id, "public_whispers_enabled", 1)
+        bot = MagicMock()
+        bot.get_me.return_value = MagicMock()
+        bot.get_me.return_value.username = "test_bot"
+        query = self._make_query(chat_id=self.chat_id)
+        self._call_handler(bot, query)
+        ids = self._get_result_ids(bot)
+        self.assertTrue(any("everyone" in rid for rid in ids),
+                        "everyone must be included when public_whispers_enabled=1")
+
+    def test_everyone_db_record_created_when_allowed(self):
+        """Everyone whisper record should be created when setting is enabled."""
+        db.update_group_setting(self.chat_id, "public_whispers_enabled", 1)
+        bot = MagicMock()
+        bot.get_me.return_value = MagicMock()
+        bot.get_me.return_value.username = "test_bot"
+        query = self._make_query(chat_id=self.chat_id)
+        self._call_handler(bot, query)
+        conn = db.get_conn()
+        count = conn.execute(
+            "SELECT COUNT(*) FROM whispers WHERE whisper_type='everyone'"
+        ).fetchone()[0]
+        conn.close()
+        self.assertGreater(count, 0,
+                           "everyone whisper records should be created when setting is enabled")
+
+    # ── Private whispers unaffected ──────────────────────────────────────
+
+    def test_first_one_unaffected_when_disabled(self):
+        """first_one should still appear even when public whispers disabled."""
+        db.update_group_setting(self.chat_id, "public_whispers_enabled", 0)
+        bot = MagicMock()
+        bot.get_me.return_value = MagicMock()
+        bot.get_me.return_value.username = "test_bot"
+        query = self._make_query(chat_id=self.chat_id)
+        self._call_handler(bot, query)
+        ids = self._get_result_ids(bot)
+        self.assertTrue(any("first_one" in rid for rid in ids),
+                        "first_one must be unaffected by public_whispers_enabled")
+
+    def test_first_three_unaffected_when_disabled(self):
+        """first_three should still appear even when public whispers disabled."""
+        db.update_group_setting(self.chat_id, "public_whispers_enabled", 0)
+        bot = MagicMock()
+        bot.get_me.return_value = MagicMock()
+        bot.get_me.return_value.username = "test_bot"
+        query = self._make_query(chat_id=self.chat_id)
+        self._call_handler(bot, query)
+        ids = self._get_result_ids(bot)
+        self.assertTrue(any("first_three" in rid for rid in ids),
+                        "first_three must be unaffected by public_whispers_enabled")
+
+    def test_custom_unaffected_when_disabled(self):
+        """custom should still appear even when public whispers disabled."""
+        db.update_group_setting(self.chat_id, "public_whispers_enabled", 0)
+        bot = MagicMock()
+        bot.get_me.return_value = MagicMock()
+        bot.get_me.return_value.username = "test_bot"
+        query = self._make_query(chat_id=self.chat_id)
+        self._call_handler(bot, query)
+        ids = self._get_result_ids(bot)
+        self.assertTrue(any("custom" in rid for rid in ids),
+                        "custom must be unaffected by public_whispers_enabled")
+
+    # ── No chat context (private) ────────────────────────────────────────
+
+    def test_everyone_shown_when_no_chat_context(self):
+        """When no chat info (private), everyone options should be shown."""
+        db.update_group_setting(None, "public_whispers_enabled", 0)  # no-op, no chat
+        bot = MagicMock()
+        bot.get_me.return_value = MagicMock()
+        bot.get_me.return_value.username = "test_bot"
+        query = self._make_query(chat_id=None)  # no chat context
+        self._call_handler(bot, query)
+        ids = self._get_result_ids(bot)
+        self.assertTrue(any("everyone" in rid for rid in ids),
+                        "everyone must be shown when no chat context")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

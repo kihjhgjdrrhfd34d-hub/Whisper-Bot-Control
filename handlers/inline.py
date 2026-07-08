@@ -7,8 +7,27 @@ from telebot.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
-from database import create_whisper, get_setting, upsert_user
+from database import create_whisper, get_setting, upsert_user, get_group_settings
 from handlers.dashboard import send_dashboard
+
+
+# ── Monkey-patch InlineQuery to expose chat info ────────────────────────────
+# pyTelegramBotAPI 4.21.0 receives the `chat` field from Telegram in **kwargs
+# but does not store it.  We patch __init__ to preserve it as self._chat.
+import telebot.types as _types
+_orig_inline_init = _types.InlineQuery.__init__
+def _inline_init_with_chat(self, id, from_user, query, offset, chat_type=None, location=None, **kwargs):
+    _orig_inline_init(self, id, from_user, query, offset, chat_type=chat_type, location=location)
+    chat_data = kwargs.get('chat')
+    if chat_data is not None:
+        try:
+            from telebot.types import Chat
+            self._chat = Chat.de_json(chat_data) if isinstance(chat_data, (dict, str)) else chat_data
+        except Exception:
+            self._chat = None
+    else:
+        self._chat = None
+_types.InlineQuery.__init__ = _inline_init_with_chat
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +119,15 @@ def register_inline_handlers(bot: telebot.TeleBot):
         hours = _auto_hours()
         results = []
 
+        # ── Check public whispers setting for group chats ─────────────────
+        chat_public_allowed = True
+        if hasattr(query, '_chat') and query._chat and query._chat.id:
+            try:
+                gs = get_group_settings(query._chat.id)
+                chat_public_allowed = bool(gs.get("public_whispers_enabled", 1))
+            except Exception:
+                pass
+
         # ── Auto-detect `@user text` or `ID text` pattern → custom whisper ──
         _TARGET_RE = re.compile(r'^(@\w+|[1-9]\d{4,})\s+([\s\S]+)$')
         m = _TARGET_RE.match(raw)
@@ -142,6 +170,8 @@ def register_inline_handlers(bot: telebot.TeleBot):
 
         # ── Four standard options ─────────────────────────────────────────
         for wtype, max_r, title, desc, group_text in FOUR_OPTIONS:
+            if wtype == "everyone" and not chat_public_allowed:
+                continue
             try:
                 targets = []
                 target_label = None
@@ -203,8 +233,23 @@ def register_inline_handlers(bot: telebot.TeleBot):
             except Exception as e:
                 logger.error(f"inline build [{wtype}]: {e}")
 
+        # ── Error result when public whispers are disabled ────────────────
+        if not chat_public_allowed and raw:
+            results.append(
+                InlineQueryResultArticle(
+                    id="error:public_disabled",
+                    title="❌ الهمسات العامة معطلة",
+                    description="غير متاحة في هذه المجموعة",
+                    input_message_content=InputTextMessageContent(
+                        message_text="❌ الهمسات العامة معطلة في هذه المجموعة"
+                    ),
+                )
+            )
+
         # ── Destructive options ───────────────────────────────────────────
         for wtype, max_r, title, desc, group_text in DESTRUCTIVE_OPTIONS:
+            if wtype == "everyone" and not chat_public_allowed:
+                continue
             try:
                 wid = create_whisper(
                     sender_id=user.id,
@@ -246,6 +291,10 @@ def register_inline_handlers(bot: telebot.TeleBot):
         result_id = result.result_id
 
         if ":" not in result_id:
+            return
+
+        # Skip non-whisper results (e.g. error messages)
+        if result_id.startswith("error:"):
             return
 
         # Detect destructive prefix
