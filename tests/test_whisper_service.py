@@ -33,6 +33,7 @@ from services.whisper_service import (
     build_read_receipt_message,
     build_destructive_receipt_message,
     build_curious_report_lines,
+    build_public_whisper_notification,
 )
 
 
@@ -266,6 +267,48 @@ class TestBuildDestructiveReceiptMessage(unittest.TestCase):
         msg = build_destructive_receipt_message(u)
         self.assertIn("التدميرية", msg)
         self.assertIn("@bob", msg)
+
+
+class TestBuildPublicWhisperNotification(unittest.TestCase):
+    """build_public_whisper_notification creates the DM for public whisper reads."""
+
+    def _make_user(self, user_id=60001, username="alice", first_name="Alice"):
+        u = MagicMock()
+        u.id = user_id
+        u.username = username
+        u.first_name = first_name
+        return u
+
+    def test_contains_all_sections(self):
+        u = self._make_user()
+        w = {"content": "secret"}
+        msg = build_public_whisper_notification(u, w)
+        self.assertIn("تم فتح همستك العامة", msg)
+        self.assertIn("@alice", msg)
+        self.assertIn("60001", msg)
+        self.assertIn("الوقت:", msg)
+
+    def test_without_username_shows_first_name(self):
+        u = self._make_user(username=None, first_name="Alice")
+        w = {"content": "hi"}
+        msg = build_public_whisper_notification(u, w)
+        self.assertIn("Alice", msg)
+
+    def test_without_username_or_name_shows_fallback(self):
+        u = self._make_user(username=None, first_name=None)
+        w = {"content": "hi"}
+        msg = build_public_whisper_notification(u, w)
+        self.assertIn("شخص", msg)
+
+    def test_format_matches_requirement(self):
+        u = self._make_user(user_id=12345, username="test_user", first_name="Test")
+        w = {"content": "any"}
+        msg = build_public_whisper_notification(u, w)
+        lines = msg.split("\n")
+        self.assertIn("👁️ تم فتح همستك العامة", lines[0])
+        self.assertIn("قرأها:", lines[2])
+        self.assertIn("• @test_user", lines[3])
+        self.assertIn("المعرف: 12345", lines[4])
 
 
 class TestBuildCuriousReportLines(unittest.TestCase):

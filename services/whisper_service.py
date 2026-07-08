@@ -125,6 +125,20 @@ def build_destructive_receipt_message(user) -> str:
     return f"👁 قرأ {display} همستك التدميرية!"
 
 
+def build_public_whisper_notification(user, w: dict) -> str:
+    """Build a DM notification when a public (everyone) whisper is first read."""
+    from datetime import datetime
+    display = get_user_display(user)
+    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    return (
+        "👁️ تم فتح همستك العامة\n\n"
+        "قرأها:\n"
+        f"• {display}\n"
+        f"المعرف: {user.id}\n"
+        f"الوقت: {timestamp}"
+    )
+
+
 def build_curious_report_lines(curious: list, readers: list) -> list:
     """Build Markdown-formatted lines for the curious-ones report."""
     lines = [

@@ -21,6 +21,7 @@ from services.whisper_service import (
     build_first_one_notification,
     build_read_receipt_message,
     build_destructive_receipt_message,
+    build_public_whisper_notification,
 )
 
 logger = logging.getLogger(__name__)
@@ -347,6 +348,17 @@ def _register_callback_handlers(bot, user_states):
                 except Exception:
                     pass
 
+        def _notify_sender_public_whisper(w: dict):
+            try:
+                bot.send_message(
+                    w["sender_id"],
+                    build_public_whisper_notification(user, w),
+                )
+            except Exception as e:
+                logger.warning(
+                    f"تعذر إرسال إشعار الهمسة العامة إلى {w['sender_id']}: {e}"
+                )
+
         # ── Main flow ────────────────────────────────────────────────────────
 
         ensure_user(user.id, user.username, user.first_name, user.last_name)
@@ -375,16 +387,22 @@ def _register_callback_handlers(bot, user_states):
             return
 
         is_new_read, is_first_ever = record_read_and_check(whisper_id, user.id)
+        is_public = (w["whisper_type"] == "everyone")
 
         if is_new_read:
             _send_content_to_reader(whisper_id, w)
 
-        if is_new_read:
+        if is_new_read and not is_public:
             readers = get_readers(whisper_id)
             reader_count_val = _update_group_keyboard(whisper_id, w, readers)
             _maybe_self_destruct(whisper_id, w, is_destructive, is_new_read, reader_count_val)
 
         if _notify_sender_first_one(w, is_first_ever):
+            return
+
+        if is_public:
+            if is_new_read:
+                _notify_sender_public_whisper(w)
             return
 
         _send_read_receipt(w, is_new_read)
