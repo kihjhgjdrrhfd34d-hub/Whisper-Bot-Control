@@ -15,6 +15,7 @@ from handlers.personal import register_personal_handlers, handle_personal_send_m
 from handlers.admin import (
     register_admin_handlers, do_broadcast, is_admin, admin_main_keyboard,
 )
+from handlers.group_settings import register_group_settings_handlers
 from handlers.stats import register_stats_handlers
 from handlers.dashboard import register_dashboard_handlers
 
@@ -497,6 +498,7 @@ def register_all_handlers():
     register_inline_handlers(bot)
     register_whisper_handlers(bot, user_states)
     register_admin_handlers(bot, user_states)
+    register_group_settings_handlers(bot, user_states)
     register_stats_handlers(bot)
     register_reply_handlers(bot, user_states)
     register_personal_handlers(bot, user_states)
