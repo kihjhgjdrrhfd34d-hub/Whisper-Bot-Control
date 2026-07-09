@@ -13,6 +13,7 @@ _SETTING_LABELS = {
 }
 
 _TOGGLE_KEYS = ["public_whispers_enabled", "anonymous_enabled", "read_notifications"]
+_AUTO_DELETE_PRESETS = [0, 1, 5, 10, 30, 60]
 
 
 def _build_settings_text(chat_id: int) -> str:
@@ -32,7 +33,7 @@ def _build_settings_text(chat_id: int) -> str:
 
 def _settings_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     settings = get_group_settings(chat_id)
-    kb = InlineKeyboardMarkup(row_width=1)
+    kb = InlineKeyboardMarkup(row_width=3)
     for key in _TOGGLE_KEYS:
         val = settings.get(key, 1)
         icon = "🟢" if val else "🔴"
@@ -44,13 +45,42 @@ def _settings_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     if auto_val and auto_val > 0:
         kb.add(InlineKeyboardButton(
             f"🕒 الحذف التلقائي: {auto_val} دقيقة",
-            callback_data="group_toggle:auto_delete_minutes",
+            callback_data="noop",
         ))
     else:
         kb.add(InlineKeyboardButton(
             "🕒 الحذف التلقائي: معطل",
-            callback_data="group_toggle:auto_delete_minutes",
+            callback_data="noop",
         ))
+    presets = _AUTO_DELETE_PRESETS
+    kb.add(
+        InlineKeyboardButton(
+            f"{'✅ ' if auto_val == presets[0] else ''}{presets[0]} دقيقة",
+            callback_data=f"group_autodel_set:{presets[0]}",
+        ),
+        InlineKeyboardButton(
+            f"{'✅ ' if auto_val == presets[1] else ''}{presets[1]} دقيقة",
+            callback_data=f"group_autodel_set:{presets[1]}",
+        ),
+        InlineKeyboardButton(
+            f"{'✅ ' if auto_val == presets[2] else ''}{presets[2]} دقائق",
+            callback_data=f"group_autodel_set:{presets[2]}",
+        ),
+    )
+    kb.add(
+        InlineKeyboardButton(
+            f"{'✅ ' if auto_val == presets[3] else ''}{presets[3]} دقائق",
+            callback_data=f"group_autodel_set:{presets[3]}",
+        ),
+        InlineKeyboardButton(
+            f"{'✅ ' if auto_val == presets[4] else ''}{presets[4]} دقيقة",
+            callback_data=f"group_autodel_set:{presets[4]}",
+        ),
+        InlineKeyboardButton(
+            f"{'✅ ' if auto_val == presets[5] else ''}{presets[5]} دقيقة",
+            callback_data=f"group_autodel_set:{presets[5]}",
+        ),
+    )
     kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="admin:main"))
     return kb
 
@@ -95,6 +125,25 @@ def register_group_settings_handlers(bot: telebot.TeleBot, user_states: dict) ->
             new_val = 0 if current else 1
 
         update_group_setting(chat_id, key, new_val)
+
+        try:
+            text = _build_settings_text(chat_id)
+            kb = _settings_keyboard(chat_id)
+            bot.edit_message_text(
+                text, chat_id, call.message.message_id,
+                parse_mode="Markdown", reply_markup=kb,
+            )
+        except Exception:
+            pass
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("group_autodel_set:"))
+    def set_auto_delete_minutes(call: telebot.types.CallbackQuery):
+        _answer(bot, call)
+        if not _guard_admin(bot, call):
+            return
+        value = int(call.data.split(":", 1)[1])
+        chat_id = call.message.chat.id
+        update_group_setting(chat_id, "auto_delete_minutes", value)
 
         try:
             text = _build_settings_text(chat_id)

@@ -47,15 +47,15 @@ def _make_call(chat_id, data, user_id=999, msg_id=100, cb_id="cb_1"):
 
 
 def _register_and_get_handlers():
-    """Register group_settings handlers and return (show_handler, toggle_handler)."""
+    """Register group_settings handlers and return (show_handler, toggle_handler, autodel_handler)."""
     from handlers.group_settings import register_group_settings_handlers
     bot = MagicMock()
     register_group_settings_handlers(bot, {})
     calls = bot.callback_query_handler.return_value.call_args_list
-    # First decorator call → show_group_settings; second → toggle_group_setting
     show_handler = calls[0][0][0] if len(calls) > 0 else None
     toggle_handler = calls[1][0][0] if len(calls) > 1 else None
-    return bot, show_handler, toggle_handler
+    autodel_handler = calls[2][0][0] if len(calls) > 2 else None
+    return bot, show_handler, toggle_handler, autodel_handler
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -121,9 +121,9 @@ class TestGroupSettingsKeyboard(unittest.TestCase):
         from handlers.group_settings import _settings_keyboard
         return _settings_keyboard(chat_id)
 
-    def test_has_four_setting_buttons(self):
+    def test_has_seven_rows(self):
         kb = self._kb(2001)
-        self.assertEqual(len(kb.keyboard), 5)
+        self.assertEqual(len(kb.keyboard), 7)
 
     def test_has_back_button(self):
         kb = self._kb(2002)
@@ -141,7 +141,12 @@ class TestGroupSettingsKeyboard(unittest.TestCase):
         self.assertIn("group_toggle:public_whispers_enabled", callbacks)
         self.assertIn("group_toggle:anonymous_enabled", callbacks)
         self.assertIn("group_toggle:read_notifications", callbacks)
-        self.assertIn("group_toggle:auto_delete_minutes", callbacks)
+        self.assertIn("group_autodel_set:0", callbacks)
+        self.assertIn("group_autodel_set:1", callbacks)
+        self.assertIn("group_autodel_set:5", callbacks)
+        self.assertIn("group_autodel_set:10", callbacks)
+        self.assertIn("group_autodel_set:30", callbacks)
+        self.assertIn("group_autodel_set:60", callbacks)
 
     def test_icons_reflect_db_state(self):
         update_group_setting(2004, "public_whispers_enabled", 0)
@@ -157,18 +162,188 @@ class TestGroupSettingsKeyboard(unittest.TestCase):
     def test_auto_delete_shows_minutes_when_enabled(self):
         update_group_setting(2005, "auto_delete_minutes", 10)
         kb = self._kb(2005)
+        found_label = False
         for row in kb.keyboard:
             for btn in row:
-                if "auto_delete_minutes" in btn.callback_data:
-                    self.assertIn("10 دقيقة", btn.text)
+                if btn.callback_data == "noop" and "دقيقة" in btn.text:
+                    found_label = True
+                    self.assertIn("10", btn.text)
+        self.assertTrue(found_label, "auto-delete label with minutes not found")
 
     def test_auto_delete_shows_disabled_when_zero(self):
         update_group_setting(2006, "auto_delete_minutes", 0)
         kb = self._kb(2006)
+        found_label = False
         for row in kb.keyboard:
             for btn in row:
-                if "auto_delete_minutes" in btn.callback_data:
-                    self.assertIn("معطل", btn.text)
+                if btn.callback_data == "noop" and "معطل" in btn.text:
+                    found_label = True
+        self.assertTrue(found_label, "auto-delete disabled label not found")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auto-delete preset buttons
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAutoDeletePresetButtons(unittest.TestCase):
+    """Auto-delete preset button rendering and active value display."""
+
+    def setUp(self):
+        _boot()
+
+    def _kb(self, chat_id):
+        from handlers.group_settings import _settings_keyboard
+        return _settings_keyboard(chat_id)
+
+    def test_all_six_preset_buttons_present(self):
+        kb = self._kb(5001)
+        preset_callbacks = []
+        for row in kb.keyboard:
+            for btn in row:
+                if btn.callback_data.startswith("group_autodel_set:"):
+                    preset_callbacks.append(btn.callback_data)
+        expected = [
+            "group_autodel_set:0",
+            "group_autodel_set:1",
+            "group_autodel_set:5",
+            "group_autodel_set:10",
+            "group_autodel_set:30",
+            "group_autodel_set:60",
+        ]
+        for cb in expected:
+            self.assertIn(cb, preset_callbacks)
+
+    def test_preset_buttons_in_two_rows_of_three(self):
+        kb = self._kb(5002)
+        preset_rows = []
+        for row in kb.keyboard:
+            cbs = [btn.callback_data for btn in row]
+            if any(cb.startswith("group_autodel_set:") for cb in cbs):
+                preset_rows.append(cbs)
+        self.assertEqual(len(preset_rows), 2)
+        self.assertEqual(len(preset_rows[0]), 3)
+        self.assertEqual(len(preset_rows[1]), 3)
+
+    def test_active_value_has_checkmark(self):
+        update_group_setting(5003, "auto_delete_minutes", 5)
+        kb = self._kb(5003)
+        for row in kb.keyboard:
+            for btn in row:
+                if btn.callback_data == "group_autodel_set:5":
+                    self.assertIn("✅", btn.text)
+                elif btn.callback_data.startswith("group_autodel_set:"):
+                    self.assertNotIn("✅", btn.text)
+
+    def test_disabled_value_shows_checkmark_on_zero(self):
+        update_group_setting(5004, "auto_delete_minutes", 0)
+        kb = self._kb(5004)
+        for row in kb.keyboard:
+            for btn in row:
+                if btn.callback_data == "group_autodel_set:0":
+                    self.assertIn("✅", btn.text)
+                elif btn.callback_data.startswith("group_autodel_set:"):
+                    self.assertNotIn("✅", btn.text)
+
+    def test_label_shows_current_minutes_when_enabled(self):
+        update_group_setting(5005, "auto_delete_minutes", 30)
+        kb = self._kb(5005)
+        found = False
+        for row in kb.keyboard:
+            for btn in row:
+                if btn.callback_data == "noop" and "30" in btn.text:
+                    found = True
+        self.assertTrue(found)
+
+    def test_label_shows_disabled_when_zero(self):
+        update_group_setting(5006, "auto_delete_minutes", 0)
+        kb = self._kb(5006)
+        found = False
+        for row in kb.keyboard:
+            for btn in row:
+                if btn.callback_data == "noop" and "معطل" in btn.text:
+                    found = True
+        self.assertTrue(found)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auto-delete preset handler
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAutoDeletePresetHandler(unittest.TestCase):
+    """group_autodel_set: handler updates DB and refreshes message."""
+
+    def setUp(self):
+        _boot()
+
+    def test_handler_updates_setting_to_zero(self):
+        chat_id = 6001
+        update_group_setting(chat_id, "auto_delete_minutes", 5)
+        _, _, _, handler = _register_and_get_handlers()
+        call = _make_call(chat_id, "group_autodel_set:0")
+        handler(call)
+        self.assertEqual(get_group_settings(chat_id)["auto_delete_minutes"], 0)
+
+    def test_handler_updates_setting_to_one(self):
+        chat_id = 6002
+        _, _, _, handler = _register_and_get_handlers()
+        call = _make_call(chat_id, "group_autodel_set:1")
+        handler(call)
+        self.assertEqual(get_group_settings(chat_id)["auto_delete_minutes"], 1)
+
+    def test_handler_updates_setting_to_five(self):
+        chat_id = 6003
+        _, _, _, handler = _register_and_get_handlers()
+        call = _make_call(chat_id, "group_autodel_set:5")
+        handler(call)
+        self.assertEqual(get_group_settings(chat_id)["auto_delete_minutes"], 5)
+
+    def test_handler_updates_setting_to_ten(self):
+        chat_id = 6004
+        _, _, _, handler = _register_and_get_handlers()
+        call = _make_call(chat_id, "group_autodel_set:10")
+        handler(call)
+        self.assertEqual(get_group_settings(chat_id)["auto_delete_minutes"], 10)
+
+    def test_handler_updates_setting_to_thirty(self):
+        chat_id = 6005
+        _, _, _, handler = _register_and_get_handlers()
+        call = _make_call(chat_id, "group_autodel_set:30")
+        handler(call)
+        self.assertEqual(get_group_settings(chat_id)["auto_delete_minutes"], 30)
+
+    def test_handler_updates_setting_to_sixty(self):
+        chat_id = 6006
+        _, _, _, handler = _register_and_get_handlers()
+        call = _make_call(chat_id, "group_autodel_set:60")
+        handler(call)
+        self.assertEqual(get_group_settings(chat_id)["auto_delete_minutes"], 60)
+
+    def test_handler_refreshes_message(self):
+        chat_id = 6007
+        bot, _, _, handler = _register_and_get_handlers()
+        call = _make_call(chat_id, "group_autodel_set:10")
+        handler(call)
+        args, kwargs = bot.edit_message_text.call_args
+        self.assertEqual(args[1], chat_id)
+        self.assertIn("10 دقيقة", args[0])
+        self.assertIsNotNone(kwargs.get("reply_markup"))
+
+    def test_handler_persistence_after_re_read(self):
+        chat_id = 6008
+        _, _, _, handler = _register_and_get_handlers()
+        handler(_make_call(chat_id, "group_autodel_set:30"))
+        self.assertEqual(get_group_settings(chat_id)["auto_delete_minutes"], 30)
+        self.assertEqual(get_group_settings(chat_id)["auto_delete_minutes"], 30)
+
+    def test_non_admin_cannot_set_preset(self):
+        bot, _, _, handler = _register_and_get_handlers()
+        call = _make_call(6009, "group_autodel_set:5", user_id=111)
+        handler(call)
+        assert bot.answer_callback_query.call_count >= 2
+        args, kwargs = bot.answer_callback_query.call_args
+        self.assertIn("غير مصرح", str(args))
+        self.assertTrue(kwargs.get("show_alert", False))
+        bot.edit_message_text.assert_not_called()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -227,7 +402,7 @@ class TestGroupSettingsToggle(unittest.TestCase):
 
     def test_toggle_public_whispers(self):
         chat_id = 3001
-        _, _, toggle = _register_and_get_handlers()
+        _, _, toggle, _ = _register_and_get_handlers()
         call = _make_call(chat_id, "group_toggle:public_whispers_enabled")
         toggle(call)
         self.assertEqual(get_group_settings(chat_id)["public_whispers_enabled"], 0)
@@ -236,7 +411,7 @@ class TestGroupSettingsToggle(unittest.TestCase):
 
     def test_toggle_anonymous(self):
         chat_id = 3002
-        _, _, toggle = _register_and_get_handlers()
+        _, _, toggle, _ = _register_and_get_handlers()
         call = _make_call(chat_id, "group_toggle:anonymous_enabled")
         toggle(call)
         self.assertEqual(get_group_settings(chat_id)["anonymous_enabled"], 0)
@@ -245,7 +420,7 @@ class TestGroupSettingsToggle(unittest.TestCase):
 
     def test_toggle_read_notifications(self):
         chat_id = 3003
-        _, _, toggle = _register_and_get_handlers()
+        _, _, toggle, _ = _register_and_get_handlers()
         call = _make_call(chat_id, "group_toggle:read_notifications")
         toggle(call)
         self.assertEqual(get_group_settings(chat_id)["read_notifications"], 0)
@@ -254,7 +429,7 @@ class TestGroupSettingsToggle(unittest.TestCase):
 
     def test_toggle_auto_delete(self):
         chat_id = 3004
-        _, _, toggle = _register_and_get_handlers()
+        _, _, toggle, _ = _register_and_get_handlers()
         call = _make_call(chat_id, "group_toggle:auto_delete_minutes")
         toggle(call)
         self.assertEqual(get_group_settings(chat_id)["auto_delete_minutes"], 5)
@@ -263,7 +438,7 @@ class TestGroupSettingsToggle(unittest.TestCase):
 
     def test_toggle_updates_message(self):
         chat_id = 3005
-        bot, _, toggle = _register_and_get_handlers()
+        bot, _, toggle, _ = _register_and_get_handlers()
         call = _make_call(chat_id, "group_toggle:public_whispers_enabled")
         toggle(call)
         args, kwargs = bot.edit_message_text.call_args
@@ -274,7 +449,7 @@ class TestGroupSettingsToggle(unittest.TestCase):
 
     def test_persistence_after_re_read(self):
         chat_id = 3006
-        _, _, toggle = _register_and_get_handlers()
+        _, _, toggle, _ = _register_and_get_handlers()
         toggle(_make_call(chat_id, "group_toggle:public_whispers_enabled"))
         self.assertEqual(get_group_settings(chat_id)["public_whispers_enabled"], 0)
         self.assertEqual(get_group_settings(chat_id)["public_whispers_enabled"], 0)
@@ -301,7 +476,7 @@ class TestGroupSettingsAdminGuard(unittest.TestCase):
         _boot()
 
     def test_non_admin_cannot_open_panel(self):
-        bot, show, _ = _register_and_get_handlers()
+        bot, show, _, _ = _register_and_get_handlers()
         call = _make_call(4001, "admin:group_settings", user_id=111)
         show(call)
         assert bot.answer_callback_query.call_count >= 2
@@ -311,7 +486,7 @@ class TestGroupSettingsAdminGuard(unittest.TestCase):
         bot.edit_message_text.assert_not_called()
 
     def test_non_admin_cannot_toggle(self):
-        bot, _, toggle = _register_and_get_handlers()
+        bot, _, toggle, _ = _register_and_get_handlers()
         call = _make_call(4002, "group_toggle:public_whispers_enabled", user_id=111)
         toggle(call)
         assert bot.answer_callback_query.call_count >= 2
@@ -322,7 +497,7 @@ class TestGroupSettingsAdminGuard(unittest.TestCase):
 
     def test_admin_can_open_panel(self):
         chat_id = 4003
-        bot, show, _ = _register_and_get_handlers()
+        bot, show, _, _ = _register_and_get_handlers()
         call = _make_call(chat_id, "admin:group_settings", user_id=999)
         show(call)
         bot.edit_message_text.assert_called_once()
@@ -331,7 +506,7 @@ class TestGroupSettingsAdminGuard(unittest.TestCase):
 
     def test_admin_can_toggle_and_updates_db(self):
         chat_id = 4004
-        bot, _, toggle = _register_and_get_handlers()
+        bot, _, toggle, _ = _register_and_get_handlers()
         call = _make_call(chat_id, "group_toggle:public_whispers_enabled", user_id=999)
         toggle(call)
         self.assertEqual(get_group_settings(chat_id)["public_whispers_enabled"], 0)
