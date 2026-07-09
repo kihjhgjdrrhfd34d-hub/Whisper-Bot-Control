@@ -97,7 +97,18 @@ def init_db():
                 public_whispers_enabled INTEGER DEFAULT 1,
                 anonymous_enabled       INTEGER DEFAULT 1,
                 read_notifications      INTEGER DEFAULT 1,
-                auto_delete_minutes     INTEGER DEFAULT 0
+                auto_delete_minutes     INTEGER DEFAULT 0,
+                spam_limit_enabled      INTEGER DEFAULT 1,
+                spam_limit_count        INTEGER DEFAULT 5,
+                spam_limit_window_seconds INTEGER DEFAULT 60
+            );
+
+            CREATE TABLE IF NOT EXISTS whisper_timestamps (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                chat_id     INTEGER NOT NULL,
+                created_at  TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
             );
         """)
         # ── Indexes for hot-path queries ──────────────────────────────────
@@ -118,6 +129,8 @@ def init_db():
                 WHERE username IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_users_created
                 ON users(created_at);
+            CREATE INDEX IF NOT EXISTS idx_wt_lookup
+                ON whisper_timestamps(user_id, chat_id, created_at);
         """)
         # seed default settings (won't overwrite existing values)
         for key, val in DEFAULT_SETTINGS.items():
@@ -673,6 +686,55 @@ def update_group_setting(chat_id, key, value):
             (value, chat_id),
         )
         conn.commit()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Whisper spam rate limiting
+# ─────────────────────────────────────────────────────────────────────────────
+
+SPAM_BLOCK_MESSAGE = (
+    "⏳ لقد تجاوزت الحد المسموح. انتظر قليلاً قبل إرسال همسة جديدة."
+)
+
+
+def record_whisper_timestamp(user_id: int, chat_id: int) -> None:
+    """Record the current time as a whisper creation event for rate-limit tracking."""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO whisper_timestamps (user_id, chat_id) VALUES (?, ?)",
+            (user_id, chat_id),
+        )
+        conn.commit()
+
+
+def check_whisper_rate_limit(user_id: int, chat_id: int) -> tuple:
+    """
+    Check whether the user is within the per-group whisper rate limit.
+
+    Returns:
+        (allowed: bool, count: int)
+        * allowed — True if the user can create another whisper.
+        * count   — number of whispers created within the current window.
+
+    The function reads the group's spam_limit_enabled / spam_limit_count /
+    spam_limit_window_seconds settings.  If anti-spam is disabled for the
+    group, it always returns (True, 0).
+    """
+    gs = get_group_settings(chat_id)
+    if not gs.get("spam_limit_enabled", 1):
+        return True, 0
+
+    limit = gs.get("spam_limit_count", 5)
+    window = gs.get("spam_limit_window_seconds", 60)
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=window)).strftime("%Y-%m-%d %H:%M:%S")
+    with get_conn() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM whisper_timestamps "
+            "WHERE user_id=? AND chat_id=? AND created_at >= ?",
+            (user_id, chat_id, cutoff),
+        ).fetchone()[0]
+    return count < limit, count
 
 
 # ─────────────────────────────────────────────────────────────────────────────

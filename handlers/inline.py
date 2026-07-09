@@ -7,7 +7,10 @@ from telebot.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
-from database import create_whisper, get_setting, upsert_user, get_group_settings
+from database import (
+    create_whisper, get_setting, upsert_user, get_group_settings,
+    check_whisper_rate_limit, record_whisper_timestamp, SPAM_BLOCK_MESSAGE,
+)
 from handlers.dashboard import send_dashboard
 
 
@@ -122,13 +125,37 @@ def register_inline_handlers(bot: telebot.TeleBot):
         # ── Check public whispers setting for group chats ─────────────────
         chat_public_allowed = True
         group_auto_delete_minutes = 0
+        chat_id_for_spam = None
         if hasattr(query, '_chat') and query._chat and query._chat.id:
+            chat_id_for_spam = query._chat.id
             try:
                 gs = get_group_settings(query._chat.id)
                 chat_public_allowed = bool(gs.get("public_whispers_enabled", 1))
                 group_auto_delete_minutes = int(gs.get("auto_delete_minutes", 0))
             except Exception:
                 pass
+
+        # ── Whisper rate-limit check (per-user per-group) ────────────────
+        if chat_id_for_spam is not None:
+            allowed, _count = check_whisper_rate_limit(user.id, chat_id_for_spam)
+            if not allowed:
+                try:
+                    bot.answer_inline_query(
+                        query.id,
+                        [InlineQueryResultArticle(
+                            id="error:rate_limit",
+                            title="⏳ تم تجاوز الحد المسموح",
+                            description=SPAM_BLOCK_MESSAGE,
+                            input_message_content=InputTextMessageContent(
+                                message_text=SPAM_BLOCK_MESSAGE,
+                            ),
+                        )],
+                        cache_time=0,
+                        is_personal=True,
+                    )
+                except Exception as e:
+                    logger.error(f"answer_inline_query (rate_limit): {e}")
+                return
 
         # ── Auto-detect `@user text` or `ID text` pattern → custom whisper ──
         _TARGET_RE = re.compile(r'^(@\w+|[1-9]\d{4,})\s+([\s\S]+)$')
@@ -150,6 +177,8 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     auto_delete_hours=hours,
                     group_auto_delete_minutes=group_auto_delete_minutes,
                 )
+                if chat_id_for_spam is not None:
+                    record_whisper_timestamp(user.id, chat_id_for_spam)
                 snippet = (
                     whisper_body[:40] + "..."
                     if len(whisper_body) > 40
@@ -210,6 +239,8 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     auto_delete_hours=hours,
                     group_auto_delete_minutes=group_auto_delete_minutes,
                 )
+                if chat_id_for_spam is not None:
+                    record_whisper_timestamp(user.id, chat_id_for_spam)
 
                 if wtype == "custom" and target_label:
                     btn_kb = InlineKeyboardMarkup(row_width=1)
@@ -265,6 +296,8 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     is_destructive=True,
                     group_auto_delete_minutes=group_auto_delete_minutes,
                 )
+                if chat_id_for_spam is not None:
+                    record_whisper_timestamp(user.id, chat_id_for_spam)
                 btn_kb = _read_button(wid, bot_username)
                 results.append(
                     InlineQueryResultArticle(

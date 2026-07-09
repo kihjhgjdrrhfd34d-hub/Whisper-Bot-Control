@@ -176,6 +176,7 @@ class TestPublicWhispersSetting(unittest.TestCase):
         _boot()
         self.chat_id = -1001234567890
         self.sender_id = 60201
+        db.update_group_setting(self.chat_id, "spam_limit_enabled", 0)
 
     def _capture_inline_handler(self, bot):
         handlers = []

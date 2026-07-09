@@ -10,10 +10,12 @@ _SETTING_LABELS = {
     "public_whispers_enabled": "الهمسات العامة",
     "anonymous_enabled": "الهمسات المجهولة",
     "read_notifications": "إشعارات القراءة",
+    "spam_limit_enabled": "حماية Spam",
 }
 
 _TOGGLE_KEYS = ["public_whispers_enabled", "anonymous_enabled", "read_notifications"]
 _AUTO_DELETE_PRESETS = [0, 1, 5, 10, 30, 60]
+_SPAM_COUNT_PRESETS = [3, 5, 10]
 
 
 def _build_settings_text(chat_id: int) -> str:
@@ -28,6 +30,13 @@ def _build_settings_text(chat_id: int) -> str:
         lines.append(f"🕒 الحذف التلقائي: {auto_val} دقيقة")
     else:
         lines.append("🕒 الحذف التلقائي: معطل")
+    spam_enabled = settings.get("spam_limit_enabled", 1)
+    spam_count = settings.get("spam_limit_count", 5)
+    spam_icon = "🟢" if spam_enabled else "🔴"
+    if spam_enabled:
+        lines.append(f"{spam_icon} حماية Spam: {spam_count} همسة / {settings.get('spam_limit_window_seconds', 60)} ث")
+    else:
+        lines.append(f"{spam_icon} حماية Spam: معطل")
     return "\n".join(lines)
 
 
@@ -81,6 +90,26 @@ def _settings_keyboard(chat_id: int) -> InlineKeyboardMarkup:
             callback_data=f"group_autodel_set:{presets[5]}",
         ),
     )
+    # ── Anti-spam section ────────────────────────────────────────────────
+    spam_enabled = settings.get("spam_limit_enabled", 1)
+    spam_icon = "🟢" if spam_enabled else "🔴"
+    kb.add(InlineKeyboardButton(
+        f"{spam_icon} {_SETTING_LABELS['spam_limit_enabled']}",
+        callback_data="group_toggle:spam_limit_enabled",
+    ))
+    spam_count = settings.get("spam_limit_count", 5)
+    kb.add(InlineKeyboardButton(
+        f"🚫 عدد الهمسات: {spam_count}",
+        callback_data="noop",
+    ))
+    spam_preset_row = []
+    for preset in _SPAM_COUNT_PRESETS:
+        label = f"{'✅ ' if spam_count == preset else ''}{preset}"
+        spam_preset_row.append(InlineKeyboardButton(
+            label,
+            callback_data=f"group_spam_set:{preset}",
+        ))
+    kb.add(*spam_preset_row)
     kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="admin:main"))
     return kb
 
@@ -144,6 +173,25 @@ def register_group_settings_handlers(bot: telebot.TeleBot, user_states: dict) ->
         value = int(call.data.split(":", 1)[1])
         chat_id = call.message.chat.id
         update_group_setting(chat_id, "auto_delete_minutes", value)
+
+        try:
+            text = _build_settings_text(chat_id)
+            kb = _settings_keyboard(chat_id)
+            bot.edit_message_text(
+                text, chat_id, call.message.message_id,
+                parse_mode="Markdown", reply_markup=kb,
+            )
+        except Exception:
+            pass
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("group_spam_set:"))
+    def set_spam_limit_count(call: telebot.types.CallbackQuery):
+        _answer(bot, call)
+        if not _guard_admin(bot, call):
+            return
+        value = int(call.data.split(":", 1)[1])
+        chat_id = call.message.chat.id
+        update_group_setting(chat_id, "spam_limit_count", value)
 
         try:
             text = _build_settings_text(chat_id)

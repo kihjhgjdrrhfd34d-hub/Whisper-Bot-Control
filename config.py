@@ -34,4 +34,7 @@ GROUP_DEFAULT_SETTINGS = {
     "anonymous_enabled": "1",
     "read_notifications": "1",
     "auto_delete_minutes": "0",
+    "spam_limit_enabled": "1",
+    "spam_limit_count": "5",
+    "spam_limit_window_seconds": "60",
 }

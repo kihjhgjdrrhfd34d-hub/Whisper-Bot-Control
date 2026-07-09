@@ -121,9 +121,9 @@ class TestGroupSettingsKeyboard(unittest.TestCase):
         from handlers.group_settings import _settings_keyboard
         return _settings_keyboard(chat_id)
 
-    def test_has_seven_rows(self):
+    def test_has_expected_rows(self):
         kb = self._kb(2001)
-        self.assertEqual(len(kb.keyboard), 7)
+        self.assertEqual(len(kb.keyboard), 10)
 
     def test_has_back_button(self):
         kb = self._kb(2002)
