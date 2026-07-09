@@ -781,6 +781,55 @@ def get_user_stats(user_id):
         }
 
 
+def get_group_stats():
+    """Aggregate statistics for the entire group (all whispers + readers)."""
+    with get_conn() as conn:
+        now = datetime.now(timezone.utc)
+        day_ago = (now - timedelta(hours=24)).isoformat()
+        week_ago = (now - timedelta(days=7)).isoformat()
+
+        whispers_last_24h = conn.execute(
+            "SELECT COUNT(*) FROM whispers WHERE created_at >= ?", (day_ago,)
+        ).fetchone()[0]
+
+        whispers_last_7d = conn.execute(
+            "SELECT COUNT(*) FROM whispers WHERE created_at >= ?", (week_ago,)
+        ).fetchone()[0]
+
+        total_whispers = conn.execute(
+            "SELECT COUNT(*) FROM whispers"
+        ).fetchone()[0]
+
+        most_used = conn.execute(
+            "SELECT whisper_type, COUNT(*) as cnt FROM whispers"
+            " GROUP BY whisper_type ORDER BY cnt DESC LIMIT 1"
+        ).fetchone()
+        most_used_whisper_type = most_used["whisper_type"] if most_used else None
+
+        top_readers_raw = conn.execute(
+            "SELECT wr.user_id, u.username, u.first_name, COUNT(*) as read_count"
+            " FROM whisper_readers wr"
+            " LEFT JOIN users u ON u.user_id = wr.user_id"
+            " GROUP BY wr.user_id"
+            " ORDER BY read_count DESC LIMIT 5"
+        ).fetchall()
+        top_readers = [dict(r) for r in top_readers_raw]
+
+        total_reads = conn.execute(
+            "SELECT COUNT(*) FROM whisper_readers"
+        ).fetchone()[0]
+
+        average_reads_per_whisper = round(total_reads / total_whispers, 2) if total_whispers else 0.0
+
+        return {
+            "whispers_last_24h": whispers_last_24h,
+            "whispers_last_7d": whispers_last_7d,
+            "most_used_whisper_type": most_used_whisper_type,
+            "top_readers": top_readers,
+            "average_reads_per_whisper": average_reads_per_whisper,
+        }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Auto-delete scheduler helper
 # ─────────────────────────────────────────────────────────────────────────────

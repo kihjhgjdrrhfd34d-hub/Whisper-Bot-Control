@@ -452,5 +452,109 @@ class TestDeleteExpired(unittest.TestCase):
         self.assertIsNone(db.get_whisper("expiredwid"))
 
 
+class TestGroupStats(unittest.TestCase):
+    def setUp(self):
+        db.init_db()
+        with db.get_conn() as conn:
+            conn.execute("DELETE FROM whisper_readers")
+            conn.execute("DELETE FROM curious_ones")
+            conn.execute("DELETE FROM whispers")
+            conn.execute("DELETE FROM users")
+            conn.commit()
+        db.upsert_user(8001, "reader1", "Reader1", None)
+        db.upsert_user(8002, "reader2", "Reader2", None)
+        db.upsert_user(8003, "reader3", "Reader3", None)
+        db.upsert_user(8004, "reader4", "Reader4", None)
+        db.upsert_user(8005, "reader5", "Reader5", None)
+        db.upsert_user(8006, "sender", "Sender", None)
+
+    def test_empty_db_returns_defaults(self):
+        with db.get_conn() as conn:
+            conn.execute("DELETE FROM whisper_readers")
+            conn.execute("DELETE FROM whispers")
+            conn.commit()
+        s = db.get_group_stats()
+        self.assertEqual(s["whispers_last_24h"], 0)
+        self.assertEqual(s["whispers_last_7d"], 0)
+        self.assertIsNone(s["most_used_whisper_type"])
+        self.assertEqual(s["top_readers"], [])
+        self.assertEqual(s["average_reads_per_whisper"], 0.0)
+
+    def test_returns_dict_with_all_keys(self):
+        s = db.get_group_stats()
+        expected = {
+            "whispers_last_24h", "whispers_last_7d",
+            "most_used_whisper_type", "top_readers",
+            "average_reads_per_whisper",
+        }
+        self.assertEqual(set(s.keys()), expected)
+
+    def test_whispers_last_24h(self):
+        wid = db.create_whisper(8006, "recent", "everyone")
+        s = db.get_group_stats()
+        self.assertEqual(s["whispers_last_24h"], 1)
+        self.assertEqual(s["whispers_last_7d"], 1)
+
+    def test_whispers_last_7d_excludes_old(self):
+        from datetime import datetime, timedelta, timezone
+        past = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        with db.get_conn() as conn:
+            conn.execute(
+                "INSERT INTO whispers (whisper_id, sender_id, content,"
+                " whisper_type, created_at) VALUES (?,?,?,?,?)",
+                ("old_wid", 8006, "old", "everyone", past),
+            )
+            conn.commit()
+        s = db.get_group_stats()
+        self.assertEqual(s["whispers_last_24h"], 0)
+        self.assertEqual(s["whispers_last_7d"], 0)
+
+    def test_most_used_whisper_type(self):
+        db.create_whisper(8006, "a", "everyone")
+        db.create_whisper(8006, "b", "everyone")
+        db.create_whisper(8006, "c", "first_one")
+        s = db.get_group_stats()
+        self.assertEqual(s["most_used_whisper_type"], "everyone")
+
+    def test_top_readers_ordered(self):
+        wid = db.create_whisper(8006, "test", "everyone")
+        for uid in [8001, 8002, 8003, 8004, 8005]:
+            db.add_reader(wid, uid)
+        # Add extra reads for reader1
+        wid2 = db.create_whisper(8006, "test2", "everyone")
+        db.add_reader(wid2, 8001)
+        s = db.get_group_stats()
+        self.assertEqual(len(s["top_readers"]), 5)
+        self.assertEqual(s["top_readers"][0]["user_id"], 8001)
+        self.assertGreater(s["top_readers"][0]["read_count"], 1)
+
+    def test_top_readers_includes_username(self):
+        wid = db.create_whisper(8006, "test", "everyone")
+        db.add_reader(wid, 8001)
+        s = db.get_group_stats()
+        self.assertIn("username", s["top_readers"][0])
+        self.assertIn("first_name", s["top_readers"][0])
+
+    def test_average_reads_per_whisper(self):
+        wid1 = db.create_whisper(8006, "a", "everyone")
+        wid2 = db.create_whisper(8006, "b", "everyone")
+        db.add_reader(wid1, 8001)
+        db.add_reader(wid1, 8002)
+        db.add_reader(wid2, 8003)
+        s = db.get_group_stats()
+        self.assertEqual(s["average_reads_per_whisper"], 1.5)
+
+    def test_top_readers_limited_to_five(self):
+        db.upsert_user(8010, "extra1", "Extra1", None)
+        db.upsert_user(8011, "extra2", "Extra2", None)
+        db.upsert_user(8012, "extra3", "Extra3", None)
+        for i in range(6):
+            wid = db.create_whisper(8006, f"w{i}", "everyone")
+            for uid in [8001, 8002, 8003, 8004, 8005, 8010, 8011, 8012]:
+                db.add_reader(wid, uid)
+        s = db.get_group_stats()
+        self.assertLessEqual(len(s["top_readers"]), 5)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

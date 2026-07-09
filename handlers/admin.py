@@ -16,8 +16,8 @@ import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from database import (
-    get_setting, set_setting, get_stats, get_all_users, search_users,
-    ban_user, unban_user, get_user, add_mandatory_channel,
+    get_setting, set_setting, get_stats, get_group_stats, get_all_users,
+    search_users, ban_user, unban_user, get_user, add_mandatory_channel,
     remove_mandatory_channel, get_mandatory_channels,
 )
 from config import ADMIN_IDS
@@ -79,7 +79,10 @@ def admin_main_keyboard() -> InlineKeyboardMarkup:
         ),
     )
     kb.add(
-        InlineKeyboardButton("📊 الإحصائيات",      callback_data="admin:stats"),
+        InlineKeyboardButton("📊 الإحصائيات",           callback_data="admin:stats"),
+        InlineKeyboardButton("📈 إحصائيات المجموعة",    callback_data="admin:group_stats"),
+    )
+    kb.add(
         InlineKeyboardButton("📢 الإذاعة",         callback_data="admin:broadcast"),
     )
     kb.add(
@@ -336,6 +339,46 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
         )
         kb = InlineKeyboardMarkup()
         kb.add(InlineKeyboardButton("🔄 تحديث", callback_data="admin:stats"))
+        kb.add(InlineKeyboardButton("🔙 رجوع",  callback_data="admin:main"))
+        _safe_edit_text(bot, call, text, kb)
+
+    # ── Group statistics ─────────────────────────────────────────────────────
+    @bot.callback_query_handler(func=lambda c: c.data == "admin:group_stats")
+    def admin_group_stats(call: telebot.types.CallbackQuery):
+        _answer(bot, call)
+        if not _guard_admin(bot, call):
+            return
+        s = get_group_stats()
+
+        type_labels = {
+            "everyone": "للجميع",
+            "first_one": "لأول شخص",
+            "first_three": "لأول ثلاثة",
+            "custom": "مخصص",
+        }
+        type_label = type_labels.get(s["most_used_whisper_type"], s["most_used_whisper_type"] or "—")
+
+        readers_lines = ""
+        if s["top_readers"]:
+            for i, r in enumerate(s["top_readers"], 1):
+                name = r["username"] or r["first_name"] or f"مستخدم {r['user_id']}"
+                readers_lines += f"  {i}. @{name} — `{r['read_count']}` قراءة\n"
+        else:
+            readers_lines = "  لا توجد قراءات بعد\n"
+
+        text = (
+            "📈 *إحصائيات المجموعة*\n\n"
+            "⏰ *الهمسات:*\n"
+            f"├ آخر 24 ساعة: `{s['whispers_last_24h']}`\n"
+            f"├ آخر 7 أيام: `{s['whispers_last_7d']}`\n"
+            f"└ النوع الأكثر استخداماً: `{type_label}`\n\n"
+            "👁 *القراءات:*\n"
+            f"├ معدل القراءات لكل همسة: `{s['average_reads_per_whisper']}`\n"
+            f"└ *أفضل 5 قرّاء:*\n"
+            f"{readers_lines}"
+        )
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🔄 تحديث", callback_data="admin:group_stats"))
         kb.add(InlineKeyboardButton("🔙 رجوع",  callback_data="admin:main"))
         _safe_edit_text(bot, call, text, kb)
 

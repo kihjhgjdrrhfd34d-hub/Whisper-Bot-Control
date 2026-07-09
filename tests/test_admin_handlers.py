@@ -90,6 +90,15 @@ class TestAdminMainKeyboard(unittest.TestCase):
         kb = admin_main_keyboard()
         self.assertTrue(len(kb.keyboard) > 0)
 
+    def test_keyboard_has_group_stats_button(self):
+        from handlers.admin import admin_main_keyboard
+        kb = admin_main_keyboard()
+        found = any(
+            btn.callback_data == "admin:group_stats"
+            for row in kb.keyboard for btn in row
+        )
+        self.assertTrue(found, "Group stats button should be in the admin keyboard")
+
 
 class TestAdminUserManagement(unittest.TestCase):
     """Test user management operations used by admin handlers."""
