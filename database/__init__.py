@@ -1,7 +1,7 @@
 import sqlite3
 import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from config import DATABASE_PATH, DEFAULT_SETTINGS, GROUP_DEFAULT_SETTINGS
 
 
@@ -311,11 +311,11 @@ def create_whisper(
     auto_delete_at = None
     if auto_delete_hours > 0:
         auto_delete_at = (
-            datetime.utcnow() + timedelta(hours=auto_delete_hours)
+            datetime.now(timezone.utc) + timedelta(hours=auto_delete_hours)
         ).isoformat()
     elif group_auto_delete_minutes > 0:
         auto_delete_at = (
-            datetime.utcnow() + timedelta(minutes=group_auto_delete_minutes)
+            datetime.now(timezone.utc) + timedelta(minutes=group_auto_delete_minutes)
         ).isoformat()
     with get_conn() as conn:
         conn.execute(
@@ -716,7 +716,7 @@ def get_stats():
         total_reads = conn.execute(
             "SELECT COUNT(*) FROM whisper_readers"
         ).fetchone()[0]
-        today = datetime.utcnow().date().isoformat()
+        today = datetime.now(timezone.utc).date().isoformat()
         new_today = conn.execute(
             "SELECT COUNT(*) FROM users WHERE created_at >= ?", (today,)
         ).fetchone()[0]
@@ -787,7 +787,7 @@ def get_user_stats(user_id):
 
 def delete_expired_whispers():
     """Delete whispers whose auto_delete_at has passed. Returns count deleted."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT whisper_id FROM whispers "

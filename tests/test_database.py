@@ -437,10 +437,10 @@ class TestDeleteExpired(unittest.TestCase):
         db.upsert_user(6001, "exp", "Expired", None)
 
     def test_delete_expired_returns_count(self):
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
         # Create a whisper that expired 1 hour ago
         with db.get_conn() as conn:
-            past = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+            past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
             conn.execute(
                 "INSERT INTO whispers (whisper_id, sender_id, content,"
                 " whisper_type, auto_delete_at) VALUES (?,?,?,?,?)",

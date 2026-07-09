@@ -72,10 +72,8 @@ def record_read_and_check(whisper_id: str, user_id: int) -> tuple:
 # ── Display name helpers ─────────────────────────────────────────────
 
 def get_reader_display_name(reader: dict) -> str:
-    """Get a display label for a reader (prefers username, falls back to name)."""
-    if reader.get("username"):
-        return f"@{reader['username']}"
-    return reader.get("first_name") or "مستخدم مجهول"
+    """Get a display label for a reader (prefers first_name, falls back to @username)."""
+    return reader.get("first_name") or (f"@{reader['username']}" if reader.get("username") else "مستخدم مجهول")
 
 
 def get_opener_name(whisper_id: str) -> str:
@@ -87,8 +85,8 @@ def get_opener_name(whisper_id: str) -> str:
 
 
 def get_user_display(user) -> str:
-    """Get a display string for a Telegram user (for read receipts)."""
-    return f"@{user.username}" if user.username else user.first_name or "شخص"
+    """Get a display string for a Telegram user (prefers first_name, falls back to @username)."""
+    return user.first_name or (f"@{user.username}" if user.username else "شخص")
 
 
 # ── Message builders (pure data → string) ────────────────────────────
@@ -127,9 +125,9 @@ def build_destructive_receipt_message(user) -> str:
 
 def build_public_whisper_notification(user, w: dict) -> str:
     """Build a DM notification when a public (everyone) whisper is first read."""
-    from datetime import datetime
+    from datetime import datetime, timezone
     display = get_user_display(user)
-    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     return (
         "👁️ تم فتح همستك العامة\n\n"
         "قرأها:\n"

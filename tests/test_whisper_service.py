@@ -121,6 +121,10 @@ class TestGetReaderDisplayName(unittest.TestCase):
 
     def test_with_username(self):
         r = {"username": "bob", "first_name": "Bob"}
+        self.assertEqual(get_reader_display_name(r), "Bob")
+
+    def test_username_only(self):
+        r = {"username": "bob", "first_name": None}
         self.assertEqual(get_reader_display_name(r), "@bob")
 
     def test_without_username(self):
@@ -148,11 +152,18 @@ class TestGetOpenerName(unittest.TestCase):
         name = get_opener_name(self.wid)
         self.assertEqual(name, "شخص آخر")
 
-    def test_with_reader_returns_username(self):
+    def test_with_reader_returns_first_name(self):
         from database import add_reader_if_new
         add_reader_if_new(self.wid, 60002)
         name = get_opener_name(self.wid)
-        self.assertEqual(name, "@bob")
+        self.assertEqual(name, "Bob")
+
+    def test_with_reader_username_only(self):
+        upsert_user(60004, "charlie", None, None)
+        from database import add_reader_if_new
+        add_reader_if_new(self.wid, 60004)
+        name = get_opener_name(self.wid)
+        self.assertEqual(name, "@charlie")
 
     def test_reader_without_username_returns_name(self):
         upsert_user(60003, None, "Charlie", None)
@@ -173,6 +184,10 @@ class TestGetUserDisplay(unittest.TestCase):
 
     def test_with_username(self):
         u = self._make_user("bob", "Bob")
+        self.assertEqual(get_user_display(u), "Bob")
+
+    def test_username_only_fallback(self):
+        u = self._make_user("bob", None)
         self.assertEqual(get_user_display(u), "@bob")
 
     def test_without_username(self):
@@ -245,6 +260,11 @@ class TestBuildReadReceiptMessage(unittest.TestCase):
     def test_with_username(self):
         u = self._make_user("bob")
         msg = build_read_receipt_message(u)
+        self.assertEqual(msg, "👁 قرأ Bob همستك!")
+
+    def test_read_receipt_username_only(self):
+        u = self._make_user("bob", None)
+        msg = build_read_receipt_message(u)
         self.assertEqual(msg, "👁 قرأ @bob همستك!")
 
     def test_without_username(self):
@@ -256,14 +276,20 @@ class TestBuildReadReceiptMessage(unittest.TestCase):
 class TestBuildDestructiveReceiptMessage(unittest.TestCase):
     """build_destructive_receipt_message creates destructive read receipt."""
 
-    def _make_user(self, username="bob"):
+    def _make_user(self, username="bob", first_name="Bob"):
         u = MagicMock()
         u.username = username
-        u.first_name = "Bob"
+        u.first_name = first_name
         return u
 
     def test_contains_destructive_indicator(self):
         u = self._make_user()
+        msg = build_destructive_receipt_message(u)
+        self.assertIn("التدميرية", msg)
+        self.assertIn("Bob", msg)
+
+    def test_destructive_username_only(self):
+        u = self._make_user("bob", None)
         msg = build_destructive_receipt_message(u)
         self.assertIn("التدميرية", msg)
         self.assertIn("@bob", msg)
@@ -284,7 +310,7 @@ class TestBuildPublicWhisperNotification(unittest.TestCase):
         w = {"content": "secret"}
         msg = build_public_whisper_notification(u, w)
         self.assertIn("تم فتح همستك العامة", msg)
-        self.assertIn("@alice", msg)
+        self.assertIn("Alice", msg)
         self.assertIn("60001", msg)
         self.assertIn("الوقت:", msg)
 
@@ -307,8 +333,16 @@ class TestBuildPublicWhisperNotification(unittest.TestCase):
         lines = msg.split("\n")
         self.assertIn("👁️ تم فتح همستك العامة", lines[0])
         self.assertIn("قرأها:", lines[2])
-        self.assertIn("• @test_user", lines[3])
+        self.assertIn("• Test", lines[3])
         self.assertIn("المعرف: 12345", lines[4])
+
+    def test_public_whisper_notification_username_only(self):
+        u = self._make_user(user_id=60001, username="alice", first_name=None)
+        w = {"content": "secret"}
+        msg = build_public_whisper_notification(u, w)
+        self.assertIn("تم فتح همستك العامة", msg)
+        self.assertIn("@alice", msg)
+        self.assertIn("60001", msg)
 
 
 class TestBuildCuriousReportLines(unittest.TestCase):

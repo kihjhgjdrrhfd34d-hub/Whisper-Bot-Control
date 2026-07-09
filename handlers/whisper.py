@@ -280,7 +280,7 @@ def _register_callback_handlers(bot, user_states):
                         "اضغط للرؤيه 🔒", callback_data=f"read:{whisper_id}"
                     ))
                 for r in readers:
-                    name = f"@{r['username']}" if r.get("username") else r.get("first_name") or "مستخدم مجهول"
+                    name = r.get("first_name") or (f"@{r['username']}" if r.get("username") else "مستخدم مجهول")
                     kb.add(InlineKeyboardButton(
                         name, callback_data=f"read:{whisper_id}"
                     ))
@@ -294,7 +294,7 @@ def _register_callback_handlers(bot, user_states):
                     "🔒 تم قرائة الهمسة", callback_data=f"read:{whisper_id}"
                 ))
                 for r in readers:
-                    name = f"@{r['username']}" if r.get("username") else r.get("first_name") or "مستخدم مجهول"
+                    name = r.get("first_name") or (f"@{r['username']}" if r.get("username") else "مستخدم مجهول")
                     kb.add(InlineKeyboardButton(
                         name, callback_data=f"read:{whisper_id}"
                     ))

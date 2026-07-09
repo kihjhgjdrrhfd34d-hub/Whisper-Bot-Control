@@ -98,7 +98,7 @@ def register_inline_handlers(bot: telebot.TeleBot):
 
         # ── Empty query: show placeholder ─────────────────────────────────
         if not raw:
-            username = f"@{user.username}" if user.username else user.first_name or "مستخدم"
+            username = user.first_name or (f"@{user.username}" if user.username else "مستخدم")
             placeholder = InlineQueryResultArticle(
                 id="placeholder",
                 title="اكتب الهمسه هنا باليوزر او الايدي",

@@ -204,9 +204,9 @@ class TestBanSystem(unittest.TestCase):
         self.assertIn("ban", actions)
 
     def test_expire_temp_bans(self):
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
         # Insert an already-expired temp ban
-        past = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         with db.get_conn() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO temp_bans (user_id, reason, banned_by, expires_at)"
@@ -315,9 +315,9 @@ class TestSelfDestruct(unittest.TestCase):
 
     def test_check_destruct_time_expired(self):
         """Manually insert an expired destruct_on to verify time trigger."""
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
         wid = db.create_whisper(10080, "expired_time", "everyone")
-        past = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         with db.get_conn() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO whisper_destruct"

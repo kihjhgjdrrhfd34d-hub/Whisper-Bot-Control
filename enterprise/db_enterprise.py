@@ -13,7 +13,7 @@ import logging
 import shutil
 import sqlite3
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -628,7 +628,7 @@ def ban_user_with_reason(user_id: int, reason: str, banned_by: int,
 
     expires_at = None
     if hours:
-        expires_at = (datetime.utcnow() + timedelta(hours=hours)).isoformat()
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
         # Write to temp_bans table
         with get_conn() as conn:
             conn.execute(
@@ -688,7 +688,7 @@ def get_ban_log(user_id: Optional[int] = None, limit: int = 20) -> List[Dict]:
 def expire_temp_bans() -> int:
     """Remove expired temp bans from temp_bans table. Returns count."""
     from database import unban_user
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT user_id FROM temp_bans WHERE expires_at <= ?", (now,)
@@ -831,7 +831,7 @@ def set_self_destruct(whisper_id: str, after_reads: int = 1,
                       after_hours: int = 0) -> None:
     destruct_on = None
     if after_hours > 0:
-        destruct_on = (datetime.utcnow() + timedelta(hours=after_hours)).isoformat()
+        destruct_on = (datetime.now(timezone.utc) + timedelta(hours=after_hours)).isoformat()
     # When after_hours == 0, destruct_on stays NULL; destruction is read-count only.
 
     with get_conn() as conn:
@@ -859,7 +859,7 @@ def check_self_destruct(whisper_id: str, current_read_count: int) -> bool:
             return True
         # Time trigger: only fires when destruct_on is explicitly set (not NULL)
         if row["destruct_on"]:
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             if now >= row["destruct_on"]:
                 return True
     return False
@@ -872,13 +872,14 @@ def check_self_destruct(whisper_id: str, current_read_count: int) -> bool:
 def snapshot_stats(period_type: str = "daily") -> None:
     """Take a statistics snapshot for the given period_type (daily/weekly/monthly/yearly)."""
     from database import get_stats
+    now = datetime.now(timezone.utc)
     label_map = {
-        "daily":   datetime.utcnow().strftime("%Y-%m-%d"),
-        "weekly":  datetime.utcnow().strftime("%Y-W%W"),
-        "monthly": datetime.utcnow().strftime("%Y-%m"),
-        "yearly":  datetime.utcnow().strftime("%Y"),
+        "daily":   now.strftime("%Y-%m-%d"),
+        "weekly":  now.strftime("%Y-W%W"),
+        "monthly": now.strftime("%Y-%m"),
+        "yearly":  now.strftime("%Y"),
     }
-    label = label_map.get(period_type, datetime.utcnow().isoformat())
+    label = label_map.get(period_type, now.isoformat())
     data  = get_stats()
     # Add enterprise stats
     with get_conn() as conn:
@@ -914,7 +915,7 @@ def get_snapshots(period_type: str, limit: int = 30) -> List[Dict]:
 
 def get_active_users(days: int = 7) -> int:
     """Users who sent a whisper or read one in the last N days."""
-    since = (datetime.utcnow() - timedelta(days=days)).isoformat()
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     with get_conn() as conn:
         senders = conn.execute(
             "SELECT COUNT(DISTINCT sender_id) FROM whispers WHERE created_at >= ?",
@@ -947,7 +948,7 @@ MAX_BACKUPS = 10
 def create_backup(created_by: Optional[int] = None, notes: str = "") -> str:
     """Copy the live SQLite DB to backups/ with a timestamped name. Returns filename."""
     from core.events import event_bus
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"whispers_backup_{ts}.db"
     dest = BACKUPS_DIR / filename
     shutil.copy2(DATABASE_PATH, dest)
