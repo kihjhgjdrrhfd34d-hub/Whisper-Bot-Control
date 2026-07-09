@@ -304,7 +304,7 @@ def search_users(query):
 def create_whisper(
     sender_id, content, whisper_type,
     target_users=None, max_readers=0, auto_delete_hours=0,
-    is_destructive=False,
+    is_destructive=False, group_auto_delete_minutes=0,
 ):
     wid = str(uuid.uuid4())[:12]
     targets = json.dumps(target_users or [])
@@ -312,6 +312,10 @@ def create_whisper(
     if auto_delete_hours > 0:
         auto_delete_at = (
             datetime.utcnow() + timedelta(hours=auto_delete_hours)
+        ).isoformat()
+    elif group_auto_delete_minutes > 0:
+        auto_delete_at = (
+            datetime.utcnow() + timedelta(minutes=group_auto_delete_minutes)
         ).isoformat()
     with get_conn() as conn:
         conn.execute(

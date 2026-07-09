@@ -91,6 +91,14 @@ def _register_message_handlers(bot, user_states):
             except Exception:
                 pass
 
+        group_auto_delete_minutes = 0
+        if msg.chat and msg.chat.type in ("group", "supergroup"):
+            try:
+                gs = get_group_settings(msg.chat.id)
+                group_auto_delete_minutes = int(gs.get("auto_delete_minutes", 0))
+            except Exception:
+                pass
+
         wid = create_whisper(
             sender_id=user.id,
             content=content,
@@ -99,6 +107,7 @@ def _register_message_handlers(bot, user_states):
             max_readers=1,
             auto_delete_hours=hours,
             is_destructive=True,
+            group_auto_delete_minutes=group_auto_delete_minutes,
         )
 
         bot_username = bot.get_me().username

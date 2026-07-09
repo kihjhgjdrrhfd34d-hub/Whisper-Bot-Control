@@ -162,6 +162,62 @@ class TestWhispers(unittest.TestCase):
         self.assertIsNone(w["auto_delete_at"])
 
 
+class TestGroupAutoDeleteMinutes(unittest.TestCase):
+    """Test group-level auto_delete_minutes enforcement in create_whisper."""
+
+    def setUp(self):
+        db.init_db()
+        db.upsert_user(7001, "sender", "Sender", None)
+
+    def test_group_setting_applies_default(self):
+        """When auto_delete_hours=0 and group_auto_delete_minutes>0,
+        auto_delete_at should be set from the group setting."""
+        wid = db.create_whisper(7001, "test", "everyone",
+                                 group_auto_delete_minutes=5)
+        w = db.get_whisper(wid)
+        self.assertIsNotNone(w["auto_delete_at"])
+
+    def test_custom_hours_overrides_group_setting(self):
+        """When auto_delete_hours>0, group setting should be ignored
+        and sender's hours value should be used."""
+        wid = db.create_whisper(7001, "test", "everyone",
+                                 auto_delete_hours=2,
+                                 group_auto_delete_minutes=5)
+        w = db.get_whisper(wid)
+        self.assertIsNotNone(w["auto_delete_at"])
+
+    def test_zero_group_setting_no_auto_delete(self):
+        """When group_auto_delete_minutes=0, no auto_delete_at should be set."""
+        wid = db.create_whisper(7001, "test", "everyone",
+                                 group_auto_delete_minutes=0)
+        w = db.get_whisper(wid)
+        self.assertIsNone(w["auto_delete_at"])
+
+    def test_all_whisper_types_receive_group_default(self):
+        """All whisper types should receive the group auto-delete default."""
+        for wtype in ("everyone", "first_one", "first_three", "custom"):
+            wid = db.create_whisper(7001, f"test_{wtype}", wtype,
+                                     group_auto_delete_minutes=5)
+            w = db.get_whisper(wid)
+            self.assertIsNotNone(
+                w["auto_delete_at"],
+                f"{wtype} should have auto_delete_at set from group",
+            )
+
+    def test_custom_hours_works_without_group_setting(self):
+        """Auto-delete works normally via auto_delete_hours without group."""
+        wid = db.create_whisper(7001, "test", "everyone",
+                                 auto_delete_hours=1)
+        w = db.get_whisper(wid)
+        self.assertIsNotNone(w["auto_delete_at"])
+
+    def test_default_args_no_auto_delete(self):
+        """Default behavior: no group setting, no hours → no auto-delete."""
+        wid = db.create_whisper(7001, "test", "everyone")
+        w = db.get_whisper(wid)
+        self.assertIsNone(w["auto_delete_at"])
+
+
 class TestCanReadWhisper(unittest.TestCase):
     def setUp(self):
         db.init_db()

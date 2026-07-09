@@ -121,10 +121,12 @@ def register_inline_handlers(bot: telebot.TeleBot):
 
         # ── Check public whispers setting for group chats ─────────────────
         chat_public_allowed = True
+        group_auto_delete_minutes = 0
         if hasattr(query, '_chat') and query._chat and query._chat.id:
             try:
                 gs = get_group_settings(query._chat.id)
                 chat_public_allowed = bool(gs.get("public_whispers_enabled", 1))
+                group_auto_delete_minutes = int(gs.get("auto_delete_minutes", 0))
             except Exception:
                 pass
 
@@ -146,6 +148,7 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     target_users=[parsed_target],
                     max_readers=0,
                     auto_delete_hours=hours,
+                    group_auto_delete_minutes=group_auto_delete_minutes,
                 )
                 snippet = (
                     whisper_body[:40] + "..."
@@ -205,6 +208,7 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     target_users=targets,
                     max_readers=max_r,
                     auto_delete_hours=hours,
+                    group_auto_delete_minutes=group_auto_delete_minutes,
                 )
 
                 if wtype == "custom" and target_label:
@@ -259,6 +263,7 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     max_readers=max_r,
                     auto_delete_hours=hours,
                     is_destructive=True,
+                    group_auto_delete_minutes=group_auto_delete_minutes,
                 )
                 btn_kb = _read_button(wid, bot_username)
                 results.append(
