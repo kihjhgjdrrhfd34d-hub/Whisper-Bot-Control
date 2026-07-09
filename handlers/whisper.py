@@ -6,7 +6,7 @@ from database import (
     add_curious,
     toggle_whisper_lock, lock_whisper, delete_whisper, clear_whisper_readers,
     get_readers, get_curious_ones,
-    get_setting, is_banned, reader_count,
+    get_setting, get_group_settings, is_banned, reader_count,
     create_whisper,
 )
 from handlers.dashboard import send_dashboard
@@ -343,7 +343,10 @@ def _register_callback_handlers(bot, user_states):
                 except Exception:
                     pass
 
-        def _notify_sender_public_whisper(w: dict):
+        def _notify_sender_public_whisper(w: dict, chat_id: int):
+            gs = get_group_settings(chat_id)
+            if gs.get("read_notifications", 1) != 1:
+                return
             try:
                 bot.send_message(
                     w["sender_id"],
@@ -397,7 +400,7 @@ def _register_callback_handlers(bot, user_states):
 
         if is_public:
             if is_new_read:
-                _notify_sender_public_whisper(w)
+                _notify_sender_public_whisper(w, call.message.chat.id)
             return
 
         _send_read_receipt(w, is_new_read)

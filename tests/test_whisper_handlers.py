@@ -605,5 +605,89 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
                          "Read must be recorded in DB")
 
 
+    def test_public_whisper_notification_sent_when_enabled(self):
+        """Verify notification IS sent when read_notifications is enabled."""
+        bot = MagicMock()
+        handlers = self._capture_handlers(bot)
+
+        from handlers.whisper import _register_callback_handlers
+        _register_callback_handlers(bot, {})
+
+        read_handler = self._find_read_handler(handlers)
+        self.assertIsNotNone(read_handler)
+
+        chat_id = -100
+        db.ensure_group_settings(chat_id)
+
+        call = MagicMock()
+        call.from_user.id = self.reader_id
+        call.from_user.username = "bob"
+        call.from_user.first_name = "Bob"
+        call.data = f"read:{self.wid}"
+        call.message = MagicMock()
+        call.message.chat.id = chat_id
+        call.message.message_id = 2
+        call.inline_message_id = None
+        call.id = "cb_enabled"
+
+        read_handler(call)
+
+        notification_calls = [
+            c for c in bot.send_message.mock_calls
+            if (len(c.args) >= 2
+                and isinstance(c.args[1], str)
+                and "تم فتح همستك العامة" in c.args[1])
+        ]
+        self.assertEqual(len(notification_calls), 1,
+                         "Notification must be sent when read_notifications is enabled")
+        self.assertEqual(reader_count(self.wid), 1,
+                         "Read must be recorded regardless of notification setting")
+        w = get_whisper(self.wid)
+        self.assertEqual(w["is_locked"], 0,
+                         "Whisper must stay unlocked regardless of notification setting")
+
+    def test_public_whisper_notification_suppressed_when_disabled(self):
+        """Verify notification is NOT sent when read_notifications is disabled."""
+        bot = MagicMock()
+        handlers = self._capture_handlers(bot)
+
+        from handlers.whisper import _register_callback_handlers
+        _register_callback_handlers(bot, {})
+
+        read_handler = self._find_read_handler(handlers)
+        self.assertIsNotNone(read_handler)
+
+        chat_id = -100
+        db.ensure_group_settings(chat_id)
+        db.update_group_setting(chat_id, "read_notifications", 0)
+
+        call = MagicMock()
+        call.from_user.id = self.reader_id
+        call.from_user.username = "bob"
+        call.from_user.first_name = "Bob"
+        call.data = f"read:{self.wid}"
+        call.message = MagicMock()
+        call.message.chat.id = chat_id
+        call.message.message_id = 2
+        call.inline_message_id = None
+        call.id = "cb_disabled"
+
+        read_handler(call)
+
+        notification_calls = [
+            c for c in bot.send_message.mock_calls
+            if (len(c.args) >= 2
+                and isinstance(c.args[1], str)
+                and "تم فتح همستك العامة" in c.args[1])
+        ]
+        self.assertEqual(len(notification_calls), 0,
+                         "Notification must NOT be sent when read_notifications is disabled")
+        self.assertEqual(reader_count(self.wid), 1,
+                         "Read must be recorded regardless of notification setting")
+        w = get_whisper(self.wid)
+        self.assertEqual(w["is_locked"], 0,
+                         "Whisper must stay unlocked regardless of notification setting")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
