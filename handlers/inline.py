@@ -10,6 +10,8 @@ from telebot.types import (
 from database import (
     create_whisper, get_setting, upsert_user, get_group_settings,
     check_whisper_rate_limit, record_whisper_timestamp, SPAM_BLOCK_MESSAGE,
+    get_pending_media, delete_pending_media, get_pending_media_by_id,
+    get_whisper,
 )
 from handlers.dashboard import send_dashboard
 
@@ -98,6 +100,20 @@ def register_inline_handlers(bot: telebot.TeleBot):
             return
 
         raw = query.query.strip()
+
+        # ── Media Wizard: check for pending media ─────────────────────────
+        pending = get_pending_media(user.id)
+        if pending:
+            try:
+                from handlers.media_wizard import build_wizard_inline_results
+                bot_username = bot.get_me().username if not bot_username else bot_username
+                results = build_wizard_inline_results(pending, bot_username)
+                bot.answer_inline_query(
+                    query.id, results, cache_time=0, is_personal=True
+                )
+            except Exception as e:
+                logger.error(f"media_wizard inline: {e}")
+            return
 
         # ── Empty query: show placeholder ─────────────────────────────────
         if not raw:
@@ -324,9 +340,15 @@ def register_inline_handlers(bot: telebot.TeleBot):
         """
         Send the whisper control panel to the sender ONLY for custom whispers.
         Public / first_one / first_three whispers do NOT get a control panel.
+        Also handles media wizard results.
         """
         user = result.from_user
         result_id = result.result_id
+
+        # ── Media Wizard: handle mw: prefixed results ────────────────────
+        if result_id.startswith("mw:"):
+            _handle_media_wizard_chosen(bot, user, result_id)
+            return
 
         if ":" not in result_id:
             return
@@ -382,3 +404,70 @@ def register_inline_handlers(bot: telebot.TeleBot):
             logger.info(f"Dashboard sent for whisper: {wid}")
         except Exception as e:
             logger.error(f"dashboard DM error: {e}")
+
+
+def _handle_media_wizard_chosen(bot, user, result_id):
+    """
+    Handle chosen_inline_result for media wizard results.
+    result_id format: mw:<whisper_type>:<pending_id>
+    """
+    try:
+        parts = result_id.split(":")
+        if len(parts) != 3:
+            return
+        _, wtype, pending_id_str = parts
+        pending_id = int(pending_id_str)
+    except (ValueError, IndexError):
+        return
+
+    pending = get_pending_media_by_id(pending_id)
+    if not pending:
+        logger.warning(f"media_wizard: pending {pending_id} not found")
+        return
+
+    # Build target users for custom type
+    target_users = []
+    max_readers = 0
+    if wtype == "first_one":
+        max_readers = 1
+    elif wtype == "first_three":
+        max_readers = 3
+
+    hours = _auto_hours()
+
+    from database import create_whisper
+    wid = create_whisper(
+        sender_id=user.id,
+        content=pending["content"] or "",
+        whisper_type=wtype,
+        target_users=target_users,
+        max_readers=max_readers,
+        auto_delete_hours=hours,
+        message_type=pending["message_type"],
+        file_id=pending["file_id"],
+        caption=pending["caption"],
+    )
+
+    # Edit inline message to add proper whisper button
+    read_kb = InlineKeyboardMarkup(row_width=1)
+    read_kb.add(InlineKeyboardButton(
+        "اضغط للرؤيه 🔒", callback_data=f"read:{wid}",
+    ))
+
+    try:
+        if result.inline_message_id:
+            bot.edit_message_reply_markup(
+                inline_message_id=result.inline_message_id,
+                reply_markup=read_kb,
+            )
+    except Exception as e:
+        logger.debug(f"media_wizard edit inline msg: {e}")
+
+    # Send dashboard to user
+    try:
+        send_dashboard(bot, user.id, wid)
+    except Exception as e:
+        logger.error(f"media_wizard dashboard: {e}")
+
+    # Cleanup
+    delete_pending_media(user.id)

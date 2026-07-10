@@ -116,6 +116,7 @@ def _build_dashboard_text(w) -> str:
             "audio": "🎵 ملف صوتي",
             "document": "📄 مستند",
             "location": "📍 موقع",
+            "animation": "🎞 متحركة",
         }
         media_label = media_label_map.get(media_type, media_type)
 

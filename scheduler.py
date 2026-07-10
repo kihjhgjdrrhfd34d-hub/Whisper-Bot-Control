@@ -15,12 +15,14 @@ def _run_scheduler(interval_seconds: int, bot):
 
 def _tick(bot):
     try:
-        from database import delete_expired_whispers, get_setting
+        from database import delete_expired_whispers, get_setting, cleanup_stale_pending_media
         if get_setting("auto_delete_enabled") != "1":
             return
         deleted = delete_expired_whispers()
         if deleted > 0:
             logger.info(f"🗑 الحذف التلقائي: تم حذف {deleted} همسة منتهية الصلاحية.")
+        # Cleanup stale pending media (older than 1 hour)
+        cleanup_stale_pending_media(hours=1)
     except Exception as e:
         logger.error(f"خطأ في دورة الحذف التلقائي: {e}")
 

@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v2.2.0] - 2026-07-10
+
+### Added
+- Media Whisper Wizard: send media (photo, video, document, audio, voice,
+  animation) as whispers directly from private chat
+- `pending_media_whispers` database table for temporary media storage
+  during the wizard flow
+- Single "• ارسل همسة •" button with chat selection via switch_inline_query
+- Whisper type selection inline results (private, everyone, first_one,
+  first_three) rendered as cached media inline results
+- Animation (`gif`/`mp4`) support in `services/media.py` — extraction,
+  sending, and inline result generation
+- Animation label in dashboard media type display
+- Anti-spam cleanup of stale pending media (auto-deleted after 1 hour)
+- Dashboard integration for media wizard whispers
+- 55 comprehensive tests in `tests/test_media_wizard.py`
+
+### Changed
+- Inline query handler now checks for pending media before showing
+  standard whisper results
+- `chosen_inline_result` handler processes media wizard results
+  (mw: prefix) to create whisper records and send dashboards
+- Scheduler now cleans up stale pending media on each tick
+
 ## [v1.1.0] - 2026-07-09
 
 ### Added

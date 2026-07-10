@@ -12,7 +12,7 @@ from typing import Optional, Tuple
 logger = logging.getLogger(__name__)
 
 SUPPORTED_WHISPER_MEDIA = {
-    "photo", "video", "voice", "audio", "document", "location",
+    "photo", "video", "voice", "audio", "document", "location", "animation",
 }
 
 
@@ -89,6 +89,13 @@ def extract_media_from_message(msg) -> dict:
         })
         return result
 
+    if ct == "animation":
+        result["message_type"] = "animation"
+        result["file_id"] = msg.animation.file_id
+        result["content"] = (msg.caption or "").strip()
+        result["caption"] = result["content"]
+        return result
+
     return result
 
 
@@ -152,6 +159,11 @@ def send_media_message(bot, chat_id: int, media_data: dict,
             if caption:
                 bot.send_message(chat_id, caption, parse_mode=parse_mode,
                                  reply_markup=None)
+            return True
+
+        if mt == "animation":
+            bot.send_animation(chat_id, fid, caption=caption[:1024],
+                               parse_mode=parse_mode, reply_markup=reply_markup)
             return True
 
         # Text-only whisper

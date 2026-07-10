@@ -18,6 +18,7 @@ from handlers.admin import (
 from handlers.group_settings import register_group_settings_handlers
 from handlers.stats import register_stats_handlers
 from handlers.dashboard import register_dashboard_handlers
+from handlers.media_wizard import register_media_wizard_handlers
 
 logger = logging.getLogger(__name__)
 
@@ -591,6 +592,7 @@ def register_all_handlers():
     register_reply_handlers(bot, user_states)
     register_personal_handlers(bot, user_states)
     register_dashboard_handlers(bot, user_states)
+    register_media_wizard_handlers(bot, user_states)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

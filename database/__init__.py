@@ -115,6 +115,17 @@ def init_db():
                 created_at  TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (user_id) REFERENCES users(user_id)
             );
+
+            CREATE TABLE IF NOT EXISTS pending_media_whispers (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id      INTEGER NOT NULL,
+                message_type TEXT NOT NULL,
+                file_id      TEXT NOT NULL,
+                caption      TEXT,
+                content      TEXT,
+                created_at   TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            );
         """)
         # ── Indexes for hot-path queries ──────────────────────────────────
         conn.executescript("""
@@ -136,6 +147,8 @@ def init_db():
                 ON users(created_at);
             CREATE INDEX IF NOT EXISTS idx_wt_lookup
                 ON whisper_timestamps(user_id, chat_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_pmw_user
+                ON pending_media_whispers(user_id);
         """)
         # seed default settings (won't overwrite existing values)
         for key, val in DEFAULT_SETTINGS.items():
@@ -208,6 +221,24 @@ def _run_migrations():
         existing_tables = {r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()}
+
+        # Migration 7: pending_media_whispers table (v2.2.0 media wizard)
+        if "pending_media_whispers" not in existing_tables:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS pending_media_whispers (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id      INTEGER NOT NULL,
+                    message_type TEXT NOT NULL,
+                    file_id      TEXT NOT NULL,
+                    caption      TEXT,
+                    content      TEXT,
+                    created_at   TEXT DEFAULT (datetime('now')),
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_pmw_user
+                    ON pending_media_whispers(user_id);
+            """)
+
         index_sql = []
         if "whispers" in existing_tables:
             index_sql += [
@@ -937,3 +968,72 @@ def delete_expired_whispers():
             conn.execute("DELETE FROM whispers WHERE whisper_id=?", (wid,))
         conn.commit()
     return count
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pending media whispers (Media Wizard v2.2.0)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def store_pending_media(user_id, message_type, file_id, caption=None, content=None):
+    """Store a pending media whisper. Returns the pending_id."""
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO pending_media_whispers
+               (user_id, message_type, file_id, caption, content)
+               VALUES (?, ?, ?, ?, ?)""",
+            (user_id, message_type, file_id, caption, content),
+        )
+        conn.commit()
+        return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def get_pending_media(user_id):
+    """Return the most recent pending media for a user, or None."""
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT * FROM pending_media_whispers
+               WHERE user_id=? ORDER BY id DESC LIMIT 1""",
+            (user_id,),
+        ).fetchone()
+
+
+def get_pending_media_by_id(pending_id):
+    """Return a pending media record by its ID."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM pending_media_whispers WHERE id=?",
+            (pending_id,),
+        ).fetchone()
+
+
+def delete_pending_media(user_id):
+    """Delete all pending media for a user."""
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM pending_media_whispers WHERE user_id=?",
+            (user_id,),
+        )
+        conn.commit()
+
+
+def delete_pending_media_by_id(pending_id):
+    """Delete a specific pending media record."""
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM pending_media_whispers WHERE id=?",
+            (pending_id,),
+        )
+        conn.commit()
+
+
+def cleanup_stale_pending_media(hours=1):
+    """Delete pending media older than the given number of hours."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM pending_media_whispers WHERE created_at <= ?",
+            (cutoff,),
+        )
+        conn.commit()

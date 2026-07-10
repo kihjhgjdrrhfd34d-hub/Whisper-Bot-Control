@@ -317,10 +317,10 @@ class TestExtractMediaFromMessage(unittest.TestCase):
         self.assertIsNone(result["message_type"])
         self.assertIsNone(result["file_id"])
 
-    def test_animation_not_whisper_media(self):
+    def test_animation_is_whisper_media(self):
         msg = _make_msg("animation", caption="funny")
         result = self.extract(msg)
-        self.assertIsNone(result["message_type"])
+        self.assertEqual(result["message_type"], "animation")
 
     def test_contact_not_whisper_media(self):
         msg = _make_msg("contact")
