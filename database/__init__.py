@@ -51,6 +51,11 @@ def init_db():
                 created_at      TEXT DEFAULT (datetime('now')),
                 auto_delete_at  TEXT,
                 is_destructive  INTEGER DEFAULT 0,
+                message_type    TEXT,
+                file_id         TEXT,
+                caption         TEXT,
+                location_lat    REAL,
+                location_lon    REAL,
                 FOREIGN KEY (sender_id) REFERENCES users(user_id)
             );
 
@@ -185,6 +190,20 @@ def _run_migrations():
             if "is_pinned" not in cols:
                 conn.execute("ALTER TABLE whispers ADD COLUMN is_pinned INTEGER DEFAULT 0")
 
+        # Migration 6: add media columns to whispers (v2.1.0 media support)
+        if "whispers" in tables:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(whispers)").fetchall()]
+            media_columns = [
+                ("message_type", "TEXT"),
+                ("file_id", "TEXT"),
+                ("caption", "TEXT"),
+                ("location_lat", "REAL"),
+                ("location_lon", "REAL"),
+            ]
+            for col_name, col_type in media_columns:
+                if col_name not in cols:
+                    conn.execute(f"ALTER TABLE whispers ADD COLUMN {col_name} {col_type}")
+
         # Migration 3: add performance indexes only when tables exist
         existing_tables = {r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
@@ -318,6 +337,8 @@ def create_whisper(
     sender_id, content, whisper_type,
     target_users=None, max_readers=0, auto_delete_hours=0,
     is_destructive=False, group_auto_delete_minutes=0,
+    message_type=None, file_id=None, caption=None,
+    location_lat=None, location_lon=None,
 ):
     wid = str(uuid.uuid4())[:12]
     targets = json.dumps(target_users or [])
@@ -335,10 +356,13 @@ def create_whisper(
             """
             INSERT INTO whispers
                 (whisper_id, sender_id, content, whisper_type,
-                 target_users, max_readers, auto_delete_at, is_destructive)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 target_users, max_readers, auto_delete_at, is_destructive,
+                 message_type, file_id, caption, location_lat, location_lon)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (wid, sender_id, content, whisper_type, targets, max_readers, auto_delete_at, int(is_destructive)),
+            (wid, sender_id, content, whisper_type, targets, max_readers,
+             auto_delete_at, int(is_destructive),
+             message_type, file_id, caption, location_lat, location_lon),
         )
         conn.commit()
     return wid

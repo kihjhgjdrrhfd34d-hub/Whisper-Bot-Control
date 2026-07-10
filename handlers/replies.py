@@ -240,9 +240,22 @@ def _handle_reply_callback(
 
     # إرسال نص الهمسة الأصلية للمستخدم ليرى ماذا سيرد عليه
     try:
+        w_dict = dict(w)
+        if w_dict.get("message_type"):
+            mt_label = {
+                "photo": "🖼 صورة",
+                "video": "🎬 فيديو",
+                "voice": "🎤 تسجيل صوتي",
+                "audio": "🎵 ملف صوتي",
+                "document": "📄 مستند",
+                "location": "📍 موقع",
+            }.get(w_dict["message_type"], w_dict["message_type"])
+            reply_text = f"📝 *الهمسة الأصلية:* ({mt_label})\n\n{w['content']}\n\n✏️ أرسل ردّك الآن:"
+        else:
+            reply_text = f"📝 *الهمسة الأصلية:*\n\n{w['content']}\n\n✏️ أرسل ردّك الآن:"
         bot.send_message(
             user.id,
-            f"📝 *الهمسة الأصلية:*\n\n{w['content']}\n\n✏️ أرسل ردّك الآن:",
+            reply_text,
             parse_mode="Markdown",
         )
     except Exception:
@@ -377,16 +390,41 @@ def _restore_whisper_message(
 ) -> None:
     """تعديل رسالة الهمسة الخاصة لعرض محتواها الأصلي مع أزرار الإجراءات."""
     kb = whisper_actions_keyboard(whisper_id)
-    try:
-        bot.edit_message_text(
-            f"🤫 *الهمسة:*\n\n{whisper_row['content']}",
-            chat_id=chat_id,
-            message_id=message_id,
-            parse_mode=None,
-            reply_markup=kb,
-        )
-    except Exception:
-        pass
+    w_dict = dict(whisper_row)
+    if w_dict.get("message_type"):
+        mt_label = {
+            "photo": "🖼 صورة",
+            "video": "🎬 فيديو",
+            "voice": "🎤 تسجيل صوتي",
+            "audio": "🎵 ملف صوتي",
+            "document": "📄 مستند",
+            "location": "📍 موقع",
+        }.get(w_dict["message_type"], w_dict["message_type"])
+        content = w_dict.get("content") or ""
+        display = f"🤫 *الهمسة:* ({mt_label})"
+        if content:
+            display += f"\n\n{content}"
+        try:
+            bot.edit_message_text(
+                display,
+                chat_id=chat_id,
+                message_id=message_id,
+                parse_mode="Markdown",
+                reply_markup=kb,
+            )
+        except Exception:
+            pass
+    else:
+        try:
+            bot.edit_message_text(
+                f"🤫 *الهمسة:*\n\n{whisper_row['content']}",
+                chat_id=chat_id,
+                message_id=message_id,
+                parse_mode=None,
+                reply_markup=kb,
+            )
+        except Exception:
+            pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -580,7 +618,23 @@ def _handle_conversation_callback(
     # بناء نص المحادثة — الهمسة ثم الردود بالتسلسل
     lines = []
     lines.append("🤫 *الهمسة*")
-    lines.append(w['content'])
+    w_dict = dict(w)
+    if w_dict.get("message_type"):
+        mt_label = {
+            "photo": "🖼 [صورة]",
+            "video": "🎬 [فيديو]",
+            "voice": "🎤 [تسجيل صوتي]",
+            "audio": "🎵 [موسيقى]",
+            "document": "📄 [مستند]",
+            "location": "📍 [موقع]",
+        }.get(w_dict["message_type"], f"[{w_dict['message_type']}]")
+        content = w_dict.get("content") or ""
+        if content:
+            lines.append(f"{mt_label} {content}")
+        else:
+            lines.append(mt_label)
+    else:
+        lines.append(w['content'])
     lines.append("")
     lines.append("───────────────")
 

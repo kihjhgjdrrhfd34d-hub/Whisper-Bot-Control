@@ -106,6 +106,19 @@ def _build_dashboard_text(w) -> str:
     type_label = _get_type_label(w["whisper_type"])
     display_id = _dash_id(w["whisper_id"])
 
+    media_type = w.get("message_type")
+    media_label = ""
+    if media_type:
+        media_label_map = {
+            "photo": "🖼 صورة",
+            "video": "🎬 فيديو",
+            "voice": "🎤 تسجيل صوتي",
+            "audio": "🎵 ملف صوتي",
+            "document": "📄 مستند",
+            "location": "📍 موقع",
+        }
+        media_label = media_label_map.get(media_type, media_type)
+
     if max_r > 0:
         reads_line = f"{r_count} / {max_r}"
     else:
@@ -123,6 +136,16 @@ def _build_dashboard_text(w) -> str:
         "",
         f"👥 نوع الهمسة:",
         f"{type_label}",
+    ]
+
+    if media_label:
+        lines.extend([
+            "",
+            f"📎 نوع الوسائط:",
+            f"{media_label}",
+        ])
+
+    lines.extend([
         "",
         f"👁️ عدد القراءات:",
         f"{reads_line}",
@@ -130,7 +153,7 @@ def _build_dashboard_text(w) -> str:
         f"💬 عدد الردود:",
         f"{replies_count}",
         "",
-    ]
+    ])
 
     if closed:
         lines.append("🔒 الحالة: مغلقة")
@@ -383,6 +406,11 @@ def register_dashboard_handlers(bot: telebot.TeleBot, user_states: dict) -> None
             max_readers=w.get("max_readers", 0),
             auto_delete_hours=hours,
             is_destructive=bool(w.get("is_destructive", 0)),
+            message_type=w.get("message_type"),
+            file_id=w.get("file_id"),
+            caption=w.get("caption"),
+            location_lat=w.get("location_lat"),
+            location_lon=w.get("location_lon"),
         )
         # إرسال رسالة إعادة الإرسال مع زر switch_inline_query
         resend_kb = InlineKeyboardMarkup()

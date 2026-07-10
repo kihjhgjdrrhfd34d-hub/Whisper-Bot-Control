@@ -234,10 +234,18 @@ def start_cmd(msg: telebot.types.Message):
                 "action": "pending_whisper_reply",
                 "whisper_id": whisper_id,
             }
-            bot.send_message(
-                msg.chat.id,
-                f"📝 أنت ترد الآن على الهمسة..\n\n{whisper_obj['content']}",
-            )
+            w_dict = dict(whisper_obj)
+            if w_dict.get("message_type"):
+                from services.media import send_media_message
+                send_media_message(
+                    bot, msg.chat.id, w_dict,
+                    text=f"📝 أنت ترد الآن على الهمسة..\n\n{w_dict['content']}",
+                )
+            else:
+                bot.send_message(
+                    msg.chat.id,
+                    f"📝 أنت ترد الآن على الهمسة..\n\n{whisper_obj['content']}",
+                )
         else:
             bot.send_message(msg.chat.id, "❌ الهمسة غير موجودة.")
         return
@@ -247,12 +255,22 @@ def start_cmd(msg: telebot.types.Message):
         whisper = get_whisper(payload)
         if whisper:
             kb = whisper_actions_keyboard(payload)
-            bot.send_message(
-                msg.chat.id,
-                f"🤫 *الهمسة:*\n\n{whisper['content']}",
-                parse_mode="Markdown",
-                reply_markup=kb,
-            )
+            w_dict = dict(whisper)
+            if w_dict.get("message_type"):
+                from services.media import send_media_message
+                send_media_message(
+                    bot, msg.chat.id, w_dict,
+                    text=f"🤫 *الهمسة:*",
+                    reply_markup=kb,
+                    parse_mode="Markdown",
+                )
+            else:
+                bot.send_message(
+                    msg.chat.id,
+                    f"🤫 *الهمسة:*\n\n{whisper['content']}",
+                    parse_mode="Markdown",
+                    reply_markup=kb,
+                )
         else:
             bot.send_message(msg.chat.id, "❌ الهمسة غير موجودة.")
         return
@@ -391,6 +409,76 @@ def handle_messages(msg: telebot.types.Message):
         return
 
     action = state.get("action")
+
+    # ── Media whisper state (must be before other text-only states) ──────
+    if action == "mwhisper_awaiting_media":
+        from services.media import extract_media_from_message
+        media = extract_media_from_message(msg)
+        target_id = state.get("target_id")
+
+        if not media["message_type"]:
+            bot.send_message(msg.chat.id, "⚠️ أرسل وسائط (صورة/فيديو/صوت/مستند/موقع).")
+            return True
+
+        hours = 0
+        if get_setting("auto_delete_enabled") == "1":
+            try:
+                hours = int(get_setting("auto_delete_hours"))
+            except Exception:
+                pass
+
+        content = media["content"] or ""
+
+        wid = create_whisper(
+            sender_id=user.id,
+            content=content,
+            whisper_type="custom",
+            target_users=[target_id],
+            max_readers=0,
+            auto_delete_hours=hours,
+            message_type=media["message_type"],
+            file_id=media["file_id"],
+            caption=media["caption"],
+            location_lat=media["location_lat"],
+            location_lon=media["location_lon"],
+        )
+
+        # Send whisper message to the target user
+        bot_username = bot.get_me().username
+        kb = InlineKeyboardMarkup(row_width=1)
+        kb.add(InlineKeyboardButton(
+            "اضغط للرؤيه 🔒", callback_data=f"read:{wid}",
+        ))
+        kb.add(InlineKeyboardButton(
+            "💬 رد على الهمسة",
+            url=f"https://t.me/{bot_username}?start=reply_{wid}",
+        ))
+
+        from services.media import send_media_message
+        try:
+            label = f"🤫 همسة سرية لـ `{target_id}`"
+            send_media_message(
+                bot, msg.chat.id, media,
+                text=label,
+                reply_markup=kb,
+                parse_mode="Markdown",
+            )
+        except Exception:
+            bot.send_message(
+                msg.chat.id,
+                f"🤫 همسة سرية لـ `{target_id}`",
+                parse_mode="Markdown",
+                reply_markup=kb,
+            )
+
+        try:
+            from handlers.dashboard import send_dashboard
+            send_dashboard(bot, user.id, wid)
+        except Exception:
+            pass
+
+        del user_states[user.id]
+        return True
 
     if action == "edit_whisper":
         whisper_id = state["whisper_id"]

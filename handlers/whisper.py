@@ -53,6 +53,66 @@ def register_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
 
 def _register_message_handlers(bot, user_states):
 
+    # ─── /mwhisper command: send media whisper by user ID ────────────────
+    @bot.message_handler(commands=["mwhisper"])
+    def mwhisper_cmd(msg: telebot.types.Message):
+        user = msg.from_user
+        if is_banned(user.id):
+            bot.reply_to(msg, "🚫 أنت محظور.")
+            return
+        if get_setting("bot_active") != "1":
+            bot.reply_to(msg, "⚠️ البوت متوقف مؤقتاً.")
+            return
+
+        parts = msg.text.split(None, 1)
+        if len(parts) < 2:
+            bot.reply_to(
+                msg,
+                "❌ الاستخدام:\n"
+                "`/mwhisper USER_ID`\n"
+                "ثم أرسل الوسائط (صورة/فيديو/صوت/مستند/موقع)\n\n"
+                "أو أرسل `/mwhisper @username`\n"
+                "مثال: `/mwhisper 123456789`",
+                parse_mode="Markdown",
+            )
+            return
+        target_str = parts[1].strip()
+        try:
+            target_id = int(target_str)
+        except ValueError:
+            t = target_str.lstrip("@")
+            from database import search_users
+            matches = search_users(t)
+            found = False
+            for u in matches:
+                if u["username"] and u["username"].lower() == t.lower():
+                    target_id = u["user_id"]
+                    found = True
+                    break
+            if not found:
+                bot.reply_to(msg, "❌ لم يتم العثور على المستخدم. تأكد من صحة المعرف أو اليوزر.")
+                return
+
+        user_states[user.id] = {
+            "action": "mwhisper_awaiting_media",
+            "target_id": target_id,
+        }
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="cancel_action"))
+        bot.send_message(
+            msg.chat.id,
+            f"✅ تم تحديد المستخدم `{target_id}`.\n\n"
+            "📎 الآن أرسل الوسائط:\n"
+            "• صورة (مع تعليق اختياري)\n"
+            "• فيديو (مع تعليق اختياري)\n"
+            "• تسجيل صوتي\n"
+            "• ملف صوتي\n"
+            "• مستند\n"
+            "• موقع",
+            parse_mode="Markdown",
+            reply_markup=kb,
+        )
+
     # ─── /dwhisper command: send destructive whisper by user ID ─────────────
     @bot.message_handler(commands=["dwhisper"])
     def dwhisper_cmd(msg: telebot.types.Message):
@@ -219,7 +279,23 @@ def _register_callback_handlers(bot, user_states):
             return True
 
         def _answer_with_content(w: dict):
-            bot.answer_callback_query(call.id, f"🤫 {w['content']}", show_alert=True)
+            w_dict = dict(w)
+            if w_dict.get("message_type"):
+                mt_label = {
+                    "photo": "🖼 صورة",
+                    "video": "🎬 فيديو",
+                    "voice": "🎤 تسجيل صوتي",
+                    "audio": "🎵 ملف صوتي",
+                    "document": "📄 مستند",
+                    "location": "📍 موقع",
+                }.get(w_dict["message_type"], w_dict["message_type"])
+                caption = w_dict.get("content") or w_dict.get("caption") or ""
+                alert_text = f"🤫 {mt_label}"
+                if caption:
+                    alert_text += f"\n{caption}"
+                bot.answer_callback_query(call.id, alert_text, show_alert=True)
+            else:
+                bot.answer_callback_query(call.id, f"🤫 {w['content']}", show_alert=True)
 
         def _try_start_dm(whisper_id: str) -> bool:
             try:
@@ -239,12 +315,23 @@ def _register_callback_handlers(bot, user_states):
                 from handlers.replies import whisper_read_keyboard
                 bot_info = bot.get_me()
                 _reader_kb = whisper_read_keyboard(whisper_id, bot_info.username)
-                bot.send_message(
-                    user.id,
-                    f"🤫 *الهمسة:*\n\n{w['content']}",
-                    parse_mode="Markdown",
-                    reply_markup=_reader_kb,
-                )
+                w_dict = dict(w)
+                media_type = w_dict.get("message_type")
+                if media_type:
+                    from services.media import send_media_message
+                    send_media_message(
+                        bot, user.id, w_dict,
+                        text=f"🤫 *الهمسة:*",
+                        reply_markup=_reader_kb,
+                        parse_mode="Markdown",
+                    )
+                else:
+                    bot.send_message(
+                        user.id,
+                        f"🤫 *الهمسة:*\n\n{w['content']}",
+                        parse_mode="Markdown",
+                        reply_markup=_reader_kb,
+                    )
             except Exception as e:
                 logger.debug(f"send whisper to reader: {e}")
 
