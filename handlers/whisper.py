@@ -8,6 +8,7 @@ from database import (
     get_readers, get_curious_ones,
     get_setting, get_group_settings, is_banned, reader_count,
     create_whisper,
+    check_whisper_rate_limit, record_whisper_timestamp, SPAM_BLOCK_MESSAGE,
 )
 from handlers.dashboard import send_dashboard
 from services.whisper_service import (
@@ -52,6 +53,140 @@ def register_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
 
 
 def _register_message_handlers(bot, user_states):
+
+    # ─── Direct media whispers from group replies ──────────────────────────
+    def _handle_media_reply(msg, content_type):
+        """Shared handler for media messages that are replies in groups.
+
+        Creates a whisper from the media content, targeted at the replied-to
+        user, and posts a group message with an inline keyboard.
+        """
+        user = msg.from_user
+        if not user:
+            return
+
+        if msg.chat.type not in ("group", "supergroup"):
+            return
+
+        if not msg.reply_to_message:
+            return
+
+        target_user = msg.reply_to_message.from_user
+        if not target_user:
+            return
+
+        if target_user.id == user.id:
+            return
+
+        if is_banned(user.id):
+            return
+
+        if get_setting("bot_active") != "1":
+            return
+
+        chat_id = msg.chat.id
+        gs = get_group_settings(chat_id)
+        if not gs.get("public_whispers_enabled", 1):
+            return
+
+        allowed, _ = check_whisper_rate_limit(user.id, chat_id)
+        if not allowed:
+            try:
+                bot.reply_to(msg, SPAM_BLOCK_MESSAGE)
+            except Exception:
+                pass
+            return
+
+        ensure_user(user.id, user.username, user.first_name, user.last_name)
+        ensure_user(target_user.id, target_user.username,
+                     target_user.first_name, target_user.last_name)
+
+        from services.media import extract_media_from_message
+        media = extract_media_from_message(msg)
+
+        hours = 0
+        if get_setting("auto_delete_enabled") == "1":
+            try:
+                hours = int(get_setting("auto_delete_hours"))
+            except Exception:
+                pass
+
+        group_auto_delete_minutes = 0
+        try:
+            group_auto_delete_minutes = int(gs.get("auto_delete_minutes", 0))
+        except Exception:
+            pass
+
+        wid = create_whisper(
+            sender_id=user.id,
+            content=media["content"],
+            whisper_type="everyone",
+            target_users=[target_user.id],
+            auto_delete_hours=hours,
+            group_auto_delete_minutes=group_auto_delete_minutes,
+            message_type=media["message_type"],
+            file_id=media["file_id"],
+            caption=media["caption"],
+            location_lat=media["location_lat"],
+            location_lon=media["location_lon"],
+        )
+
+        bot_username = bot.get_me().username
+        kb = InlineKeyboardMarkup(row_width=1)
+        kb.add(InlineKeyboardButton(
+            "اضغط للرؤيه 🔒", callback_data=f"read:{wid}",
+        ))
+        kb.add(InlineKeyboardButton(
+            "💬 رد على الهمسة",
+            url=f"https://t.me/{bot_username}?start=reply_{wid}",
+        ))
+
+        media_label = {
+            "photo":    "📷 هذه همسة تحتوي على صورة",
+            "video":    "🎬 هذه همسة تحتوي على فيديو",
+            "voice":    "🎤 هذه همسة تحتوي على تسجيل صوتي",
+            "audio":    "🎵 هذه همسة تحتوي على ملف صوتي",
+            "document": "📄 هذه همسة تحتوي على مستند",
+            "location": "📍 هذه همسة تحتوي على موقع",
+        }.get(media["message_type"], "📎 هذه همسة تحتوي على وسائط")
+
+        try:
+            bot.send_message(
+                chat_id, media_label, reply_markup=kb,
+            )
+        except Exception:
+            pass
+
+        try:
+            send_dashboard(bot, user.id, wid)
+        except Exception:
+            pass
+
+        record_whisper_timestamp(user.id, chat_id)
+
+    @bot.message_handler(content_types=["photo"])
+    def _media_photo_reply(msg: telebot.types.Message):
+        _handle_media_reply(msg, "photo")
+
+    @bot.message_handler(content_types=["video"])
+    def _media_video_reply(msg: telebot.types.Message):
+        _handle_media_reply(msg, "video")
+
+    @bot.message_handler(content_types=["audio"])
+    def _media_audio_reply(msg: telebot.types.Message):
+        _handle_media_reply(msg, "audio")
+
+    @bot.message_handler(content_types=["voice"])
+    def _media_voice_reply(msg: telebot.types.Message):
+        _handle_media_reply(msg, "voice")
+
+    @bot.message_handler(content_types=["document"])
+    def _media_document_reply(msg: telebot.types.Message):
+        _handle_media_reply(msg, "document")
+
+    @bot.message_handler(content_types=["location"])
+    def _media_location_reply(msg: telebot.types.Message):
+        _handle_media_reply(msg, "location")
 
     # ─── /mwhisper command: send media whisper by user ID ────────────────
     @bot.message_handler(commands=["mwhisper"])
