@@ -7,10 +7,11 @@ from database import (
     update_whisper_content, set_setting, add_mandatory_channel,
     search_users, ban_user, unban_user,
     is_new_user, mark_user_started, get_stats, get_whisper,
+    create_whisper,
 )
 from handlers.inline import register_inline_handlers
 from handlers.whisper import register_whisper_handlers
-from handlers.replies import register_reply_handlers, handle_reply_message, whisper_actions_keyboard
+from handlers.replies import register_reply_handlers, handle_reply_message
 from handlers.personal import register_personal_handlers, handle_personal_send_message
 from handlers.admin import (
     register_admin_handlers, do_broadcast, is_admin, admin_main_keyboard,
@@ -19,12 +20,15 @@ from handlers.group_settings import register_group_settings_handlers
 from handlers.stats import register_stats_handlers
 from handlers.dashboard import register_dashboard_handlers
 from handlers.media_wizard import register_media_wizard_handlers
+from handlers.media_whispers import register_media_whisper_handlers
 
 logger = logging.getLogger(__name__)
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None)
 
 user_states = {}
+
+register_media_wizard_handlers(bot, user_states)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -230,50 +234,154 @@ def start_cmd(msg: telebot.types.Message):
     if payload and payload.startswith("reply_"):
         whisper_id = payload[len("reply_"):]
         whisper_obj = get_whisper(whisper_id)
-        if whisper_obj:
-            user_states[user.id] = {
-                "action": "pending_whisper_reply",
-                "whisper_id": whisper_id,
-            }
-            w_dict = dict(whisper_obj)
-            if w_dict.get("message_type"):
-                from services.media import send_media_message
-                send_media_message(
-                    bot, msg.chat.id, w_dict,
-                    text=f"📝 أنت ترد الآن على الهمسة..\n\n{w_dict['content']}",
-                )
-            else:
-                bot.send_message(
-                    msg.chat.id,
-                    f"📝 أنت ترد الآن على الهمسة..\n\n{whisper_obj['content']}",
-                )
-        else:
+        if not whisper_obj:
             bot.send_message(msg.chat.id, "❌ الهمسة غير موجودة.")
+            return
+
+        w_dict = dict(whisper_obj)
+
+        from database import can_read_whisper
+        can, reason = can_read_whisper(whisper_id, user.id)
+        if not can and reason != "sender":
+            bot.send_message(msg.chat.id, "⛔ لا يمكنك الرد على هذه الهمسة.")
+            return
+
+        user_states[user.id] = {
+            "action": "pending_whisper_reply",
+            "whisper_id": whisper_id,
+        }
+        if w_dict.get("message_type"):
+            from services.media import send_media_message
+            send_media_message(
+                bot, msg.chat.id, w_dict,
+                text=f"📝 أنت ترد الآن على الهمسة..\n\n{w_dict['content']}",
+            )
+        else:
+            bot.send_message(
+                msg.chat.id,
+                f"📝 أنت ترد الآن على الهمسة..\n\n{whisper_obj['content']}",
+            )
         return
 
     # ── Deep link: show whisper content with action buttons ──────────────
     if payload:
-        whisper = get_whisper(payload)
-        if whisper:
-            kb = whisper_actions_keyboard(payload)
-            w_dict = dict(whisper)
+        # Strip view_ prefix if present (e.g. "view_abc123" → "abc123")
+        whisper_id_payload = payload[len("view_"):] if payload.startswith("view_") else payload
+
+        from database import (
+            can_read_whisper, delete_whisper, get_readers, add_curious,
+            lock_whisper, reader_count,
+        )
+        from services.whisper_service import (
+            record_read_and_check, is_destructive_whisper,
+            build_first_one_notification, build_read_receipt_message,
+            build_public_whisper_notification,
+        )
+
+        whisper = get_whisper(whisper_id_payload)
+        if not whisper:
+            bot.send_message(msg.chat.id, "🔒 هذه الهمسة غير موجودة أو تم مشاهدتها بالفعل")
+            return
+
+        w_dict = dict(whisper)
+
+        # ── CRITICAL: Access control BEFORE sending any content ─────────
+        can, reason = can_read_whisper(whisper_id_payload, user.id)
+        if not can:
+            if reason == "taken":
+                opener_name = ""
+                readers = get_readers(whisper_id_payload)
+                if readers:
+                    r = readers[0]
+                    opener_name = r.get("first_name") or (f"@{r['username']}" if r.get("username") else "شخص آخر")
+                if reason == "taken":
+                    bot.send_message(
+                        msg.chat.id,
+                        f"🔒 هذه الهمسة تم فتحها بالفعل من قبل ({opener_name}).",
+                    )
+                else:
+                    bot.send_message(msg.chat.id, "🔒 هذه الهمسة مقفلة.")
+            elif reason == "locked":
+                bot.send_message(msg.chat.id, "🔒 هذه الهمسة مقفلة.")
+            else:
+                bot.send_message(msg.chat.id, "🔒 هذه الهمسة غير موجودة أو تم مشاهدتها بالفعل")
+            try:
+                add_curious(whisper_id_payload, user.id)
+            except Exception:
+                pass
+            return
+
+        # ── Sender viewing own whisper: show content without reply button ──
+        if reason == "sender":
             if w_dict.get("message_type"):
                 from services.media import send_media_message
-                send_media_message(
-                    bot, msg.chat.id, w_dict,
-                    text=f"🤫 *الهمسة:*",
-                    reply_markup=kb,
-                    parse_mode="Markdown",
-                )
+                send_media_message(bot, msg.chat.id, w_dict)
             else:
-                bot.send_message(
-                    msg.chat.id,
-                    f"🤫 *الهمسة:*\n\n{whisper['content']}",
-                    parse_mode="Markdown",
-                    reply_markup=kb,
-                )
+                content = w_dict.get("content", "")
+                if content:
+                    bot.send_message(msg.chat.id, content)
+                else:
+                    bot.send_message(msg.chat.id, "🔒 هذه الهمسة غير موجودة أو تم مشاهدتها بالفعل")
+            return
+
+        # ── Record the read for non-senders ────────────────────────────
+        is_new_read, is_first_ever = record_read_and_check(whisper_id_payload, user.id)
+
+        # ── Send content with reply button (URL deep-link) ─────────────
+        me = _get_bot_me(bot)
+        bot_username = me.username if me else ""
+
+        if w_dict.get("message_type"):
+            from handlers.media_whispers import media_whisper_read_keyboard
+            _mw_kb = media_whisper_read_keyboard(whisper_id_payload, bot_username)
+            from services.media import send_media_message
+            send_media_message(bot, msg.chat.id, w_dict, reply_markup=_mw_kb)
         else:
-            bot.send_message(msg.chat.id, "❌ الهمسة غير موجودة.")
+            from handlers.replies import whisper_read_keyboard
+            _reader_kb = whisper_read_keyboard(whisper_id_payload, bot_username)
+            content = w_dict.get("content", "")
+            if content:
+                bot.send_message(msg.chat.id, content, reply_markup=_reader_kb)
+            else:
+                bot.send_message(msg.chat.id, "🔒 هذه الهمسة غير موجودة أو تم مشاهدتها بالفعل")
+                return
+
+        # ── Apply destructive deletion rules ────────────────────────────
+        is_destructive = is_destructive_whisper(w_dict)
+        if is_destructive and is_new_read:
+            wtype = w_dict.get("whisper_type")
+            r_count = reader_count(whisper_id_payload)
+            if wtype in ("first_one", "everyone"):
+                lock_whisper(whisper_id_payload)
+                delete_whisper(whisper_id_payload)
+            elif wtype == "first_three" and r_count >= 3:
+                lock_whisper(whisper_id_payload)
+                delete_whisper(whisper_id_payload)
+
+        # ── Edit group button for open-once (non-destructive only) ──────
+        if is_new_read and not is_destructive:
+            from handlers.whisper import _edit_group_to_opened
+            _edit_group_to_opened(bot, whisper_id_payload)
+
+        # ── Notify sender ──────────────────────────────────────────────
+        if is_new_read:
+            sender_id = w_dict["sender_id"]
+            wtype = w_dict.get("whisper_type")
+            if wtype == "first_one" and is_first_ever:
+                try:
+                    bot.send_message(sender_id, build_first_one_notification(user, w_dict), parse_mode="HTML")
+                except Exception:
+                    pass
+            elif wtype == "everyone":
+                try:
+                    bot.send_message(sender_id, build_public_whisper_notification(user, w_dict))
+                except Exception:
+                    pass
+            elif get_setting("read_receipt_enabled") == "1":
+                try:
+                    bot.send_message(sender_id, build_read_receipt_message(user))
+                except Exception:
+                    pass
         return
 
     text, kb = _main_menu_text_and_kb(bot, user)
@@ -390,7 +498,7 @@ def check_membership_cb(call: telebot.types.CallbackQuery):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @bot.message_handler(
-    func=lambda m: True,
+    func=lambda m: user_states.get(m.from_user.id) is not None,
     content_types=["text", "photo", "video", "document", "voice", "audio", "sticker",
                    "animation", "contact", "location"],
 )
@@ -404,6 +512,11 @@ def handle_messages(msg: telebot.types.Message):
     # ── Priority: whisper reply (must be checked before other states) ─────
     if handle_reply_message(bot, msg, user_states):
         return   # message was consumed by the reply handler
+
+    # ── Media whisper reply (mwreply: system) ────────────────────────────
+    from handlers.media_whispers import handle_media_reply_message
+    if handle_media_reply_message(bot, msg, user_states):
+        return   # message was consumed by the media reply handler
 
     # ── Personal whisper state ────────────────────────────────────────────
     if handle_personal_send_message(bot, msg, user_states):
@@ -444,33 +557,37 @@ def handle_messages(msg: telebot.types.Message):
             location_lon=media["location_lon"],
         )
 
-        # Send whisper message to the target user
+        # Send whisper message to the target user (URL deep-link button)
         bot_username = bot.get_me().username
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(InlineKeyboardButton(
-            "اضغط للرؤيه 🔒", callback_data=f"read:{wid}",
-        ))
-        kb.add(InlineKeyboardButton(
-            "💬 رد على الهمسة",
-            url=f"https://t.me/{bot_username}?start=reply_{wid}",
+            "🔒 اضغط للرؤية",
+            url=f"tg://resolve?domain={bot_username}&start=view_{wid}",
         ))
 
-        from services.media import send_media_message
+        media_label = {
+            "photo":    "📷 هذه همسة تحتوي على صورة",
+            "video":    "🎬 هذه همسة تحتوي على فيديو",
+            "voice":    "🎤 هذه همسة تحتوي على تسجيل صوتي",
+            "audio":    "🎵 هذه همسة تحتوي على ملف صوتي",
+            "document": "📄 هذه همسة تحتوي على مستند",
+            "animation": "🎞 هذه همسة تحتوي على متحركة",
+            "location": "📍 هذه همسة تحتوي على موقع",
+        }.get(media.get("message_type"), "📎 هذه همسة تحتوي على وسائط")
+
         try:
-            label = f"🤫 همسة سرية لـ `{target_id}`"
-            send_media_message(
-                bot, msg.chat.id, media,
-                text=label,
-                reply_markup=kb,
-                parse_mode="Markdown",
-            )
-        except Exception:
-            bot.send_message(
+            from database import update_whisper_group_message
+            sent_msg = bot.send_message(
                 msg.chat.id,
-                f"🤫 همسة سرية لـ `{target_id}`",
-                parse_mode="Markdown",
+                media_label,
                 reply_markup=kb,
             )
+            if sent_msg:
+                update_whisper_group_message(
+                    wid, chat_id=msg.chat.id, message_id=sent_msg.message_id,
+                )
+        except Exception:
+            pass
 
         try:
             from handlers.dashboard import send_dashboard
@@ -592,7 +709,7 @@ def register_all_handlers():
     register_reply_handlers(bot, user_states)
     register_personal_handlers(bot, user_states)
     register_dashboard_handlers(bot, user_states)
-    register_media_wizard_handlers(bot, user_states)
+    register_media_whisper_handlers(bot, user_states)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

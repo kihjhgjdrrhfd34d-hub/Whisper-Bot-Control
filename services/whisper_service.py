@@ -56,7 +56,7 @@ def ensure_user(user_id: int, username: str | None,
 
 # ── Read recording ───────────────────────────────────────────────────
 
-def record_read_and_check(whisper_id: str, user_id: int) -> tuple:
+def record_read_and_check(whisper_id: str, user_id: int, display_name: str = "") -> tuple:
     """Record a read and determine if it's the reader's first and the first-ever.
 
     Returns:

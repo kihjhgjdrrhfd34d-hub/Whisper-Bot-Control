@@ -8,15 +8,13 @@ Covers:
   4.  cleanup_stale_pending_media removes old entries
   5.  Media extraction: animation type support
   6.  send_media_message: animation type
-  7.  build_wizard_inline_results for all media types
-  8.  build_wizard_inline_results returns 4 results
-  9.  Inline query returns wizard results when pending media exists
-  10. chosen_inline_result creates whisper from pending media
-  11. Cancel flow deletes pending media
-  12. Migration idempotency for pending_media_whispers
-  13. Media wizard whisper auto-delete
-  14. Dashboard integration with media wizard whispers
-  15. Anti-spam: pending media respects bot_active setting
+  7.  Inline query returns wizard results when pending media exists
+  8.  chosen_inline_result creates whisper from pending media
+  9.  Cancel flow deletes pending media
+  10. Migration idempotency for pending_media_whispers
+  11. Media wizard whisper auto-delete
+  12. Dashboard integration with media wizard whispers
+  13. Anti-spam: pending media respects bot_active setting
 """
 import json
 import os
@@ -354,80 +352,7 @@ class TestSendAnimationMessage(unittest.TestCase):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. build_wizard_inline_results for all media types
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestBuildWizardInlineResults(unittest.TestCase):
-    def setUp(self):
-        _boot()
-        from handlers.media_wizard import build_wizard_inline_results
-        self.build = build_wizard_inline_results
-
-    def _fake_pending(self, message_type, file_id, caption=""):
-        pid = store_pending_media(
-            user_id=20001, message_type=message_type,
-            file_id=file_id, caption=caption,
-        )
-        return get_pending_media_by_id(pid)
-
-    def test_photo_results(self):
-        pending = self._fake_pending("photo", "PHOTO_INLINE")
-        results = self.build(pending, "testbot")
-        self.assertEqual(len(results), 4)
-        for r in results:
-            self.assertTrue(r.id.startswith("mw:"))
-
-    def test_video_results(self):
-        pending = self._fake_pending("video", "VIDEO_INLINE")
-        results = self.build(pending, "testbot")
-        self.assertEqual(len(results), 4)
-
-    def test_audio_results(self):
-        pending = self._fake_pending("audio", "AUDIO_INLINE")
-        results = self.build(pending, "testbot")
-        self.assertEqual(len(results), 4)
-
-    def test_voice_results(self):
-        pending = self._fake_pending("voice", "VOICE_INLINE")
-        results = self.build(pending, "testbot")
-        self.assertEqual(len(results), 4)
-
-    def test_document_results(self):
-        pending = self._fake_pending("document", "DOC_INLINE")
-        results = self.build(pending, "testbot")
-        self.assertEqual(len(results), 4)
-
-    def test_animation_results(self):
-        pending = self._fake_pending("animation", "ANIM_INLINE")
-        results = self.build(pending, "testbot")
-        self.assertEqual(len(results), 4)
-
-    def test_result_ids_contain_type(self):
-        pending = self._fake_pending("photo", "PHOTO_IDS")
-        results = self.build(pending, "testbot")
-        types = {"custom", "everyone", "first_one", "first_three"}
-        result_types = set()
-        for r in results:
-            parts = r.id.split(":")
-            result_types.add(parts[1])
-        self.assertEqual(result_types, types)
-
-    def test_result_ids_contain_pending_id(self):
-        pending = self._fake_pending("photo", "PHOTO_PID")
-        results = self.build(pending, "testbot")
-        for r in results:
-            parts = r.id.split(":")
-            self.assertEqual(parts[2], str(pending["id"]))
-
-    def test_result_has_reply_markup(self):
-        pending = self._fake_pending("photo", "PHOTO_KB")
-        results = self.build(pending, "testbot")
-        for r in results:
-            self.assertIsNotNone(r.reply_markup)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 8. Media wizard whisper creation
+# Media wizard whisper creation
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestMediaWizardWhisperCreation(unittest.TestCase):

@@ -99,10 +99,11 @@ def whisper_actions_keyboard(whisper_id: str) -> InlineKeyboardMarkup:
 
 def whisper_read_keyboard(whisper_id: str, bot_username: str = "") -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(InlineKeyboardButton(
-        "💬 رد على الهمسة",
-        callback_data=f"{_REPLY_WHISPER_PREFIX}{whisper_id}",
-    ))
+    if bot_username:
+        reply_url = f"tg://resolve?domain={bot_username}&start=reply_{whisper_id}"
+        kb.add(InlineKeyboardButton("↩️ رد", url=reply_url))
+    else:
+        kb.add(InlineKeyboardButton("↩️ رد", callback_data=f"{_REPLY_WHISPER_PREFIX}{whisper_id}"))
     if count_replies(whisper_id) > 0:
         kb.add(conversation_button(whisper_id))
     return kb
