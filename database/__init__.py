@@ -239,6 +239,32 @@ def _run_migrations():
                     ON pending_media_whispers(user_id);
             """)
 
+        # Migration 8: add media_type column to whispers
+        if "whispers" in tables:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(whispers)").fetchall()]
+            if "media_type" not in cols:
+                conn.execute("ALTER TABLE whispers ADD COLUMN media_type TEXT")
+
+        # Migration 10: group message tracking for open-once behavior
+        if "whispers" in tables:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(whispers)").fetchall()]
+            if "group_chat_id" not in cols:
+                conn.execute("ALTER TABLE whispers ADD COLUMN group_chat_id INTEGER")
+            if "group_message_id" not in cols:
+                conn.execute("ALTER TABLE whispers ADD COLUMN group_message_id INTEGER")
+            if "group_inline_message_id" not in cols:
+                conn.execute("ALTER TABLE whispers ADD COLUMN group_inline_message_id TEXT")
+
+        # Migration 9: add spam-limit columns to group_settings if missing
+        if "group_settings" in tables:
+            gs_cols = [r[1] for r in conn.execute("PRAGMA table_info(group_settings)").fetchall()]
+            if "spam_limit_enabled" not in gs_cols:
+                conn.execute("ALTER TABLE group_settings ADD COLUMN spam_limit_enabled INTEGER DEFAULT 1")
+            if "spam_limit_count" not in gs_cols:
+                conn.execute("ALTER TABLE group_settings ADD COLUMN spam_limit_count INTEGER DEFAULT 5")
+            if "spam_limit_window_seconds" not in gs_cols:
+                conn.execute("ALTER TABLE group_settings ADD COLUMN spam_limit_window_seconds INTEGER DEFAULT 60")
+
         index_sql = []
         if "whispers" in existing_tables:
             index_sql += [
@@ -370,6 +396,7 @@ def create_whisper(
     is_destructive=False, group_auto_delete_minutes=0,
     message_type=None, file_id=None, caption=None,
     location_lat=None, location_lon=None,
+    media_type=None,
 ):
     wid = str(uuid.uuid4())[:12]
     targets = json.dumps(target_users or [])
@@ -382,18 +409,22 @@ def create_whisper(
         auto_delete_at = (
             datetime.now(timezone.utc) + timedelta(minutes=group_auto_delete_minutes)
         ).isoformat()
+    if media_type is None:
+        media_type = message_type or "text"
     with get_conn() as conn:
         conn.execute(
             """
             INSERT INTO whispers
                 (whisper_id, sender_id, content, whisper_type,
                  target_users, max_readers, auto_delete_at, is_destructive,
-                 message_type, file_id, caption, location_lat, location_lon)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 message_type, file_id, caption, location_lat, location_lon,
+                 media_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (wid, sender_id, content, whisper_type, targets, max_readers,
              auto_delete_at, int(is_destructive),
-             message_type, file_id, caption, location_lat, location_lon),
+             message_type, file_id, caption, location_lat, location_lon,
+             media_type),
         )
         conn.commit()
     return wid
@@ -411,6 +442,18 @@ def update_whisper_content(whisper_id, content):
         conn.execute(
             "UPDATE whispers SET content=? WHERE whisper_id=?", (content, whisper_id)
         )
+        conn.commit()
+
+
+def update_whisper_group_message(whisper_id, chat_id=None, message_id=None, inline_message_id=None):
+    """Store the group/channel message location for open-once button editing."""
+    with get_conn() as conn:
+        if chat_id is not None:
+            conn.execute("UPDATE whispers SET group_chat_id=? WHERE whisper_id=?", (chat_id, whisper_id))
+        if message_id is not None:
+            conn.execute("UPDATE whispers SET group_message_id=? WHERE whisper_id=?", (message_id, whisper_id))
+        if inline_message_id is not None:
+            conn.execute("UPDATE whispers SET group_inline_message_id=? WHERE whisper_id=?", (inline_message_id, whisper_id))
         conn.commit()
 
 
@@ -642,28 +685,36 @@ def can_read_whisper(whisper_id, user_id):
     w = dict(w)
     if w.get("is_closed", 0):
         return False, "locked"
-    if w["is_locked"]:
-        return False, "locked"
-    if w["sender_id"] == user_id:
-        return True, "sender"
+
     wtype = w["whisper_type"]
+
     if wtype == "everyone":
+        if w["is_locked"]:
+            return False, "locked"
+        if w["sender_id"] == user_id:
+            return True, "sender"
         return True, "allowed"
+
     if wtype == "first_one":
+        if w["sender_id"] == user_id:
+            return True, "sender"
         readers = get_readers(whisper_id)
         if len(readers) == 0 or any(r["user_id"] == user_id for r in readers):
             return True, "allowed"
         return False, "taken"
+
     if wtype == "first_three":
         readers = get_readers(whisper_id)
         if len(readers) < 3 or any(r["user_id"] == user_id for r in readers):
             return True, "allowed"
         return False, "taken"
+
     if wtype == "custom":
         targets = json.loads(w["target_users"])
         if user_id in targets or str(user_id) in targets:
             return True, "allowed"
         return False, "not_target"
+
     return False, "unknown"
 
 

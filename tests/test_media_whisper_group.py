@@ -367,22 +367,21 @@ class TestGroupMessage(unittest.TestCase):
         found = False
         for row in kb.keyboard:
             for btn in row:
-                if "اضغط للرؤيه" in btn.text:
+                if "اضغط للرؤية" in btn.text:
                     found = True
-                    self.assertTrue(btn.callback_data.startswith("read:"))
+                    self.assertIsNotNone(btn.url)
+                    self.assertIn("start=view_", btn.url)
         self.assertTrue(found)
 
-    def test_keyboard_has_reply_button(self):
+    def test_no_reply_button_in_group(self):
         fn, bot = _handler("photo")
         fn(_make_media_msg("photo", 70001, -100100, replied_to_id=70002))
         kb = self._get_sent_kb(bot)
-        found = False
         for row in kb.keyboard:
             for btn in row:
-                if "رد على الهمسة" in btn.text:
-                    found = True
-                    self.assertIn("t.me/testbot", btn.url)
-        self.assertTrue(found)
+                if btn.text:
+                    self.assertNotIn("رد", btn.text,
+                                     "Reply button should NOT appear in group messages")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ from database import (
     get_setting, get_group_settings, is_banned, reader_count,
     create_whisper,
     check_whisper_rate_limit, record_whisper_timestamp, SPAM_BLOCK_MESSAGE,
+    update_whisper_group_message,
 )
 from handlers.dashboard import send_dashboard
 from services.whisper_service import (
@@ -26,6 +27,53 @@ from services.whisper_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+_OPENED_LABEL = "✔️ لقد تم فتح الهمسة"
+
+
+def _build_opened_keyboard(whisper_id, bot_username):
+    """Build the disabled 'opened' keyboard for a completed whisper."""
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data=f"opened:{whisper_id}"))
+    return kb
+
+
+def _edit_group_to_opened(bot, whisper_id, call=None):
+    """Edit the group/channel message to show the opened state button."""
+    w = get_whisper(whisper_id)
+    if not w:
+        return
+    w_data = dict(w)
+    inline_msg_id = w_data.get("group_inline_message_id")
+    group_chat_id = w_data.get("group_chat_id")
+    group_msg_id = w_data.get("group_message_id")
+
+    if not inline_msg_id and not (group_chat_id and group_msg_id):
+        return
+
+    try:
+        bot_info = bot.get_me()
+        bot_username = bot_info.username
+    except Exception:
+        bot_username = ""
+
+    kb = _build_opened_keyboard(whisper_id, bot_username)
+
+    try:
+        if call and getattr(call, "inline_message_id", None):
+            bot.edit_message_reply_markup(
+                inline_message_id=call.inline_message_id, reply_markup=kb,
+            )
+        elif inline_msg_id:
+            bot.edit_message_reply_markup(
+                inline_message_id=inline_msg_id, reply_markup=kb,
+            )
+        elif group_chat_id and group_msg_id:
+            bot.edit_message_reply_markup(
+                chat_id=group_chat_id, message_id=group_msg_id, reply_markup=kb,
+            )
+    except Exception as e:
+        logger.debug(f"edit_group_to_opened: {e}")
 
 
 def _destroy_whisper_message(call, bot):
@@ -134,11 +182,8 @@ def _register_message_handlers(bot, user_states):
         bot_username = bot.get_me().username
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(InlineKeyboardButton(
-            "اضغط للرؤيه 🔒", callback_data=f"read:{wid}",
-        ))
-        kb.add(InlineKeyboardButton(
-            "💬 رد على الهمسة",
-            url=f"https://t.me/{bot_username}?start=reply_{wid}",
+            "🔒 اضغط للرؤية",
+            url=f"tg://resolve?domain={bot_username}&start=view_{wid}",
         ))
 
         media_label = {
@@ -151,9 +196,13 @@ def _register_message_handlers(bot, user_states):
         }.get(media["message_type"], "📎 هذه همسة تحتوي على وسائط")
 
         try:
-            bot.send_message(
+            sent_msg = bot.send_message(
                 chat_id, media_label, reply_markup=kb,
             )
+            if sent_msg:
+                update_whisper_group_message(
+                    wid, chat_id=chat_id, message_id=sent_msg.message_id,
+                )
         except Exception:
             pass
 
@@ -308,18 +357,22 @@ def _register_message_handlers(bot, user_states):
         bot_username = bot.get_me().username
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(InlineKeyboardButton(
-            "اضغط للرؤيه 🔒", callback_data=f"read:{wid}",
+            "🔒 اضغط للرؤية",
+            url=f"tg://resolve?domain={bot_username}&start=view_{wid}",
         ))
-        kb.add(InlineKeyboardButton(
-            "💬 رد على الهمسة",
-            url=f"https://t.me/{bot_username}?start=reply_{wid}",
-        ))
-        bot.send_message(
-            msg.chat.id,
-            f"💣 همسة تدميرية للمستخدم `{target_id}`",
-            parse_mode="Markdown",
-            reply_markup=kb,
-        )
+        try:
+            sent_msg = bot.send_message(
+                msg.chat.id,
+                f"💣 همسة تدميرية للمستخدم `{target_id}`",
+                parse_mode="Markdown",
+                reply_markup=kb,
+            )
+            if sent_msg:
+                update_whisper_group_message(
+                    wid, chat_id=msg.chat.id, message_id=sent_msg.message_id,
+                )
+        except Exception:
+            pass
 
         # إرسال لوحة التحكم لمُرسل الهمسة
         try:
@@ -438,7 +491,7 @@ def _register_callback_handlers(bot, user_states):
                 return True
             except Exception:
                 bot_info = bot.get_me()
-                redirect_url = f"t.me/{bot_info.username}?start={whisper_id}"
+                redirect_url = f"tg://resolve?domain={bot_info.username}&start={whisper_id}"
                 try:
                     bot.answer_callback_query(call.id, url=redirect_url)
                 except Exception:
@@ -447,12 +500,13 @@ def _register_callback_handlers(bot, user_states):
 
         def _send_content_to_reader(whisper_id: str, w: dict):
             try:
-                from handlers.replies import whisper_read_keyboard
-                bot_info = bot.get_me()
-                _reader_kb = whisper_read_keyboard(whisper_id, bot_info.username)
                 w_dict = dict(w)
                 media_type = w_dict.get("message_type")
+                bot_info = bot.get_me()
+                bot_username = bot_info.username
                 if media_type:
+                    from handlers.media_whispers import media_whisper_read_keyboard
+                    _reader_kb = media_whisper_read_keyboard(whisper_id, bot_username)
                     from services.media import send_media_message
                     send_media_message(
                         bot, user.id, w_dict,
@@ -461,6 +515,8 @@ def _register_callback_handlers(bot, user_states):
                         parse_mode="Markdown",
                     )
                 else:
+                    from handlers.replies import whisper_read_keyboard
+                    _reader_kb = whisper_read_keyboard(whisper_id, bot_username)
                     bot.send_message(
                         user.id,
                         f"🤫 *الهمسة:*\n\n{w['content']}",
@@ -473,11 +529,11 @@ def _register_callback_handlers(bot, user_states):
         def _update_group_keyboard(whisper_id: str, w: dict, readers: list):
             reader_count_val = len(readers)
             wtype = w["whisper_type"]
-            opener_name = get_user_display(user)
 
             bot_info = bot.get_me()
             bot_username = bot_info.username
-            reply_url = f"https://t.me/{bot_username}?start=reply_{whisper_id}"
+
+            view_url = f"tg://resolve?domain={bot_username}&start=view_{whisper_id}"
 
             should_edit = False
             kb = InlineKeyboardMarkup(row_width=1)
@@ -485,43 +541,29 @@ def _register_callback_handlers(bot, user_states):
             if wtype == "everyone":
                 should_edit = True
                 kb.add(InlineKeyboardButton(
-                    "اضغط للرؤيه 🔒", callback_data=f"read:{whisper_id}"
-                ))
-                kb.add(InlineKeyboardButton(
-                    "💬 رد على الهمسة", url=reply_url
+                    "🔒 اضغط للرؤية", url=view_url
                 ))
 
             elif wtype == "first_three":
                 should_edit = True
                 if reader_count_val >= 3:
                     kb.add(InlineKeyboardButton(
-                        "🔒 تم قرائة الهمسة", callback_data=f"read:{whisper_id}"
+                        _OPENED_LABEL, callback_data=f"opened:{whisper_id}"
                     ))
                 else:
                     kb.add(InlineKeyboardButton(
-                        "اضغط للرؤيه 🔒", callback_data=f"read:{whisper_id}"
+                        "🔒 اضغط للرؤية", url=view_url
                     ))
-                for r in readers:
-                    name = r.get("first_name") or (f"@{r['username']}" if r.get("username") else "مستخدم مجهول")
-                    kb.add(InlineKeyboardButton(
-                        name, callback_data=f"read:{whisper_id}"
-                    ))
-                kb.add(InlineKeyboardButton(
-                    "💬 رد على الهمسة", url=reply_url
-                ))
+                    for r in readers:
+                        name = r.get("first_name") or (f"@{r['username']}" if r.get("username") else "مستخدم مجهول")
+                        kb.add(InlineKeyboardButton(
+                            name, callback_data=f"read:{whisper_id}"
+                        ))
 
-            else:  # first_one, custom — lock immediately
+            else:  # first_one, custom — open once
                 should_edit = True
                 kb.add(InlineKeyboardButton(
-                    "🔒 تم قرائة الهمسة", callback_data=f"read:{whisper_id}"
-                ))
-                for r in readers:
-                    name = r.get("first_name") or (f"@{r['username']}" if r.get("username") else "مستخدم مجهول")
-                    kb.add(InlineKeyboardButton(
-                        name, callback_data=f"read:{whisper_id}"
-                    ))
-                kb.add(InlineKeyboardButton(
-                    "💬 رد على الهمسة", url=reply_url
+                    _OPENED_LABEL, callback_data=f"opened:{whisper_id}"
                 ))
 
             if should_edit:
@@ -653,6 +695,24 @@ def _register_callback_handlers(bot, user_states):
         new_state = toggle_whisper_lock(whisper_id)
         label = "مقفلة 🔒" if new_state else "مفتوحة 🔓"
         bot.answer_callback_query(call.id, f"✅ الهمسة أصبحت {label}", show_alert=True)
+
+    # ─── Opened (disabled button) ────────────────────────────────────────────
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("opened:"))
+    def handle_opened(call: telebot.types.CallbackQuery):
+        user = call.from_user
+        whisper_id = call.data.split(":", 1)[1]
+        w = get_whisper(whisper_id)
+        if not w:
+            bot.answer_callback_query(call.id, "❌ الهمسة غير موجودة.", show_alert=True)
+            return
+        if w["sender_id"] == user.id:
+            bot.answer_callback_query(
+                call.id, "لقد قمت بفتح الهمسة بالفعل!", show_alert=True,
+            )
+        else:
+            bot.answer_callback_query(
+                call.id, "⚠️ تم فتح الهمسة بالفعل", show_alert=True,
+            )
 
     # ─── Delete ──────────────────────────────────────────────────────────────
     @bot.callback_query_handler(func=lambda c: c.data.startswith("delete:"))
