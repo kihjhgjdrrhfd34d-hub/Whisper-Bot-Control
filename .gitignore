@@ -27,3 +27,4 @@ backups/
 # OS
 .DS_Store
 .venv/
+.aider*

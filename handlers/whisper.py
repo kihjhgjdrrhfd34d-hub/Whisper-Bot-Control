@@ -464,6 +464,7 @@ def _register_callback_handlers(bot, user_states):
                     bot.send_message(w["sender_id"], build_destructive_receipt_message(user))
                 except Exception:
                     pass
+            _send_reply_invitation(whisper_id)
             lock_whisper(whisper_id)
             _destroy_whisper_message(call, bot)
             return True
@@ -575,6 +576,23 @@ def _register_callback_handlers(bot, user_states):
                 except Exception:
                     pass
 
+        def _send_reply_invitation(wid: str):
+            """Send a private DM to the reader with a reply button."""
+            try:
+                _kb = InlineKeyboardMarkup(row_width=1)
+                _kb.add(InlineKeyboardButton(
+                    "💬 الرد على الهمسة",
+                    callback_data=f"wsp_reply:whisper:{wid}",
+                ))
+                bot.send_message(
+                    user.id,
+                    "💌 انتهيت من قراءة الهمسة.\n\n"
+                    "إذا رغبت، يمكنك إرسال رد إلى صاحبها.",
+                    reply_markup=_kb,
+                )
+            except Exception:
+                pass
+
         def _notify_sender_public_whisper(w: dict, chat_id: int):
             try:
                 bot.send_message(
@@ -616,6 +634,7 @@ def _register_callback_handlers(bot, user_states):
         if is_new_read:
             readers = get_readers(whisper_id)
             reader_count_val = _update_group_keyboard(whisper_id, w, readers)
+            _send_reply_invitation(whisper_id)
             _maybe_self_destruct(whisper_id, w, is_destructive, is_new_read, reader_count_val)
 
         if _notify_sender_first_one(w, is_first_ever):
