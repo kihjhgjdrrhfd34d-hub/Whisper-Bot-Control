@@ -369,8 +369,8 @@ class TestGroupMessage(unittest.TestCase):
             for btn in row:
                 if "اضغط للرؤية" in btn.text:
                     found = True
-                    self.assertIsNotNone(btn.url)
-                    self.assertIn("start=view_", btn.url)
+                    self.assertIsNotNone(btn.callback_data)
+                    self.assertTrue(btn.callback_data.startswith("read:"))
         self.assertTrue(found)
 
     def test_no_reply_button_in_group(self):

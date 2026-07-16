@@ -563,8 +563,8 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
                          "No DM notification for sender reading own whisper")
 
     def test_public_whisper_keyboard_updated_without_reader_names(self):
-        """Verify public whisper edits the group inline message to add the
-        reply button, but does NOT add reader name buttons."""
+        """Verify public whisper does NOT edit the channel message
+        and does NOT add reader name buttons."""
         bot = MagicMock()
         handlers = self._capture_handlers(bot)
 
@@ -587,14 +587,14 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
 
         read_handler(call)
 
-        # edit_message_reply_markup SHOULD be called for everyone whispers
-        # (to add the reply button, but NOT reader names)
+        # edit_message_reply_markup should NOT be called for everyone whispers
+        # (channel message stays unchanged)
         edit_calls = [
             c for c in bot.edit_message_reply_markup.mock_calls
             if c[0] == ''
         ]
-        self.assertGreaterEqual(len(edit_calls), 1,
-                         "edit_message_reply_markup must be called for everyone whispers")
+        self.assertEqual(len(edit_calls), 0,
+                         "edit_message_reply_markup must NOT be called for everyone whispers")
 
         # The whisper stays unlocked
         w = get_whisper(self.wid)
@@ -646,8 +646,9 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
         self.assertEqual(w["is_locked"], 0,
                          "Whisper must stay unlocked regardless of notification setting")
 
-    def test_public_whisper_notification_suppressed_when_disabled(self):
-        """Verify notification is NOT sent when read_notifications is disabled."""
+    def test_public_whisper_notification_always_sent(self):
+        """Verify notification IS sent even when read_notifications is disabled.
+        Everyone whisper notifications always reach the sender."""
         bot = MagicMock()
         handlers = self._capture_handlers(bot)
 
@@ -680,8 +681,8 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
                 and isinstance(c.args[1], str)
                 and "تم فتح همستك العامة" in c.args[1])
         ]
-        self.assertEqual(len(notification_calls), 0,
-                         "Notification must NOT be sent when read_notifications is disabled")
+        self.assertEqual(len(notification_calls), 1,
+                         "Everyone notification must always be sent regardless of read_notifications setting")
         self.assertEqual(reader_count(self.wid), 1,
                          "Read must be recorded regardless of notification setting")
         w = get_whisper(self.wid)

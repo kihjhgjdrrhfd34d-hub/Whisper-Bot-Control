@@ -20,6 +20,7 @@ from services.whisper_service import (
     record_read_and_check,
     get_opener_name,
     get_user_display,
+    get_reader_display_name,
     build_first_one_notification,
     build_read_receipt_message,
     build_destructive_receipt_message,
@@ -28,17 +29,20 @@ from services.whisper_service import (
 
 logger = logging.getLogger(__name__)
 
-_OPENED_LABEL = "✔️ لقد تم فتح الهمسة"
+_OPENED_LABEL = "تم قراءة الهمسة 🔓"
+_BEFOREAD_LABEL = "اضغط للرؤية 🔒"
 
 
-def _build_opened_keyboard(whisper_id, bot_username):
+def _build_opened_keyboard(whisper_id, bot_username, reader_name=None):
     """Build the disabled 'opened' keyboard for a completed whisper."""
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data=f"opened:{whisper_id}"))
+    if reader_name:
+        kb.add(InlineKeyboardButton(reader_name, callback_data=f"opened:{whisper_id}"))
     return kb
 
 
-def _edit_group_to_opened(bot, whisper_id, call=None):
+def _edit_group_to_opened(bot, whisper_id, call=None, reader_name=None):
     """Edit the group/channel message to show the opened state button."""
     w = get_whisper(whisper_id)
     if not w:
@@ -57,7 +61,7 @@ def _edit_group_to_opened(bot, whisper_id, call=None):
     except Exception:
         bot_username = ""
 
-    kb = _build_opened_keyboard(whisper_id, bot_username)
+    kb = _build_opened_keyboard(whisper_id, bot_username, reader_name=reader_name)
 
     try:
         if call and getattr(call, "inline_message_id", None):
@@ -179,11 +183,10 @@ def _register_message_handlers(bot, user_states):
             location_lon=media["location_lon"],
         )
 
-        bot_username = bot.get_me().username
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(InlineKeyboardButton(
             "🔒 اضغط للرؤية",
-            url=f"tg://resolve?domain={bot_username}&start=view_{wid}",
+            callback_data=f"read:{wid}",
         ))
 
         media_label = {
@@ -354,11 +357,10 @@ def _register_message_handlers(bot, user_states):
             group_auto_delete_minutes=group_auto_delete_minutes,
         )
 
-        bot_username = bot.get_me().username
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(InlineKeyboardButton(
             "🔒 اضغط للرؤية",
-            url=f"tg://resolve?domain={bot_username}&start=view_{wid}",
+            callback_data=f"read:{wid}",
         ))
         try:
             sent_msg = bot.send_message(
@@ -485,102 +487,59 @@ def _register_callback_handlers(bot, user_states):
             else:
                 bot.answer_callback_query(call.id, f"🤫 {w['content']}", show_alert=True)
 
-        def _try_start_dm(whisper_id: str) -> bool:
-            try:
-                bot.send_chat_action(call.from_user.id, "typing")
-                return True
-            except Exception:
-                bot_info = bot.get_me()
-                redirect_url = f"tg://resolve?domain={bot_info.username}&start={whisper_id}"
-                try:
-                    bot.answer_callback_query(call.id, url=redirect_url)
-                except Exception:
-                    pass
-                return False
-
-        def _send_content_to_reader(whisper_id: str, w: dict):
-            try:
-                w_dict = dict(w)
-                media_type = w_dict.get("message_type")
-                bot_info = bot.get_me()
-                bot_username = bot_info.username
-                if media_type:
-                    from handlers.media_whispers import media_whisper_read_keyboard
-                    _reader_kb = media_whisper_read_keyboard(whisper_id, bot_username)
-                    from services.media import send_media_message
-                    send_media_message(
-                        bot, user.id, w_dict,
-                        text=f"🤫 *الهمسة:*",
-                        reply_markup=_reader_kb,
-                        parse_mode="Markdown",
-                    )
-                else:
-                    from handlers.replies import whisper_read_keyboard
-                    _reader_kb = whisper_read_keyboard(whisper_id, bot_username)
-                    bot.send_message(
-                        user.id,
-                        f"🤫 *الهمسة:*\n\n{w['content']}",
-                        parse_mode="Markdown",
-                        reply_markup=_reader_kb,
-                    )
-            except Exception as e:
-                logger.debug(f"send whisper to reader: {e}")
-
         def _update_group_keyboard(whisper_id: str, w: dict, readers: list):
             reader_count_val = len(readers)
             wtype = w["whisper_type"]
 
-            bot_info = bot.get_me()
-            bot_username = bot_info.username
-
-            view_url = f"tg://resolve?domain={bot_username}&start=view_{whisper_id}"
-
-            should_edit = False
             kb = InlineKeyboardMarkup(row_width=1)
 
+            last_reader_name = get_reader_display_name(readers[-1]) if readers else None
+
             if wtype == "everyone":
-                should_edit = True
-                kb.add(InlineKeyboardButton(
-                    "🔒 اضغط للرؤية", url=view_url
-                ))
+                return reader_count_val
 
             elif wtype == "first_three":
-                should_edit = True
                 if reader_count_val >= 3:
                     kb.add(InlineKeyboardButton(
-                        _OPENED_LABEL, callback_data=f"opened:{whisper_id}"
+                        _OPENED_LABEL, callback_data=f"opened:{whisper_id}",
                     ))
+                    if last_reader_name:
+                        kb.add(InlineKeyboardButton(
+                            last_reader_name, callback_data=f"opened:{whisper_id}",
+                        ))
                 else:
                     kb.add(InlineKeyboardButton(
-                        "🔒 اضغط للرؤية", url=view_url
+                        _BEFOREAD_LABEL, callback_data=f"read:{whisper_id}",
                     ))
                     for r in readers:
-                        name = r.get("first_name") or (f"@{r['username']}" if r.get("username") else "مستخدم مجهول")
+                        name = get_reader_display_name(r)
                         kb.add(InlineKeyboardButton(
-                            name, callback_data=f"read:{whisper_id}"
+                            name, callback_data=f"read:{whisper_id}",
                         ))
 
             else:  # first_one, custom — open once
-                should_edit = True
                 kb.add(InlineKeyboardButton(
-                    _OPENED_LABEL, callback_data=f"opened:{whisper_id}"
+                    _OPENED_LABEL, callback_data=f"opened:{whisper_id}",
                 ))
+                if last_reader_name:
+                    kb.add(InlineKeyboardButton(
+                        last_reader_name, callback_data=f"opened:{whisper_id}",
+                    ))
 
-            if should_edit:
-                try:
-                    if call.inline_message_id:
-                        bot.edit_message_reply_markup(
-                            inline_message_id=call.inline_message_id,
-                            reply_markup=kb,
-                        )
-                    elif call.message:
-                        bot.edit_message_reply_markup(
-                            chat_id=call.message.chat.id,
-                            message_id=call.message.message_id,
-                            reply_markup=kb,
-                        )
-                except Exception as e:
-                    logger.debug(f"edit_reply_markup: {e}")
+            try:
+                if call.inline_message_id:
+                    bot.edit_message_reply_markup(
+                        inline_message_id=call.inline_message_id,
+                        reply_markup=kb,
+                    )
+                elif call.message:
+                    bot.edit_message_reply_markup(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        reply_markup=kb,
+                    )
+            except Exception as e:
+                logger.debug(f"edit_reply_markup: {e}")
 
             return reader_count_val
 
@@ -617,9 +576,6 @@ def _register_callback_handlers(bot, user_states):
                     pass
 
         def _notify_sender_public_whisper(w: dict, chat_id: int):
-            gs = get_group_settings(chat_id)
-            if gs.get("read_notifications", 1) != 1:
-                return
             try:
                 bot.send_message(
                     w["sender_id"],
@@ -651,17 +607,11 @@ def _register_callback_handlers(bot, user_states):
             return
 
         _answer_with_content(w)
-        if not _try_start_dm(whisper_id):
-            return
 
         if is_own_whisper(user.id, w):
             return
 
         is_new_read, is_first_ever = record_read_and_check(whisper_id, user.id)
-        is_public = (w["whisper_type"] == "everyone")
-
-        if is_new_read:
-            _send_content_to_reader(whisper_id, w)
 
         if is_new_read:
             readers = get_readers(whisper_id)
@@ -671,9 +621,10 @@ def _register_callback_handlers(bot, user_states):
         if _notify_sender_first_one(w, is_first_ever):
             return
 
+        is_public = (w["whisper_type"] == "everyone")
         if is_public:
             if is_new_read:
-                _notify_sender_public_whisper(w, call.message.chat.id)
+                _notify_sender_public_whisper(w, call.message.chat.id if call.message else 0)
             return
 
         _send_read_receipt(w, is_new_read)

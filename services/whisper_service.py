@@ -85,8 +85,16 @@ def get_opener_name(whisper_id: str) -> str:
 
 
 def get_user_display(user) -> str:
-    """Get a display string for a Telegram user (prefers first_name, falls back to @username)."""
-    return user.first_name or (f"@{user.username}" if user.username else "شخص")
+    """Get a display string for a Telegram user: first_name + last_name, falls back to @username."""
+    first_raw = getattr(user, "first_name", None)
+    first = first_raw.strip() if isinstance(first_raw, str) else ""
+    last_raw = getattr(user, "last_name", None)
+    last = last_raw.strip() if isinstance(last_raw, str) else ""
+    full = " ".join(filter(None, [first, last])).strip()
+    if full:
+        return full
+    username = getattr(user, "username", None)
+    return f"@{username}" if isinstance(username, str) and username else "شخص"
 
 
 # ── Message builders (pure data → string) ────────────────────────────
