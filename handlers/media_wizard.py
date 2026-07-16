@@ -111,10 +111,9 @@ def build_media_whisper_inline_results(pending, bot_username, hours):
                 location_lat=location_lat,
                 location_lon=location_lon,
             )
-            view_url = f"tg://resolve?domain={bot_username}&start=view_{wid}"
             kb = InlineKeyboardMarkup(row_width=1)
             kb.add(InlineKeyboardButton(
-                "🔒 اضغط للرؤية", url=view_url,
+                "🔒 اضغط للرؤية", callback_data=f"read:{wid}",
             ))
             results.append(
                 InlineQueryResultArticle(
@@ -146,10 +145,9 @@ def build_media_whisper_inline_results(pending, bot_username, hours):
                 location_lat=location_lat,
                 location_lon=location_lon,
             )
-            view_url = f"tg://resolve?domain={bot_username}&start=view_{wid}"
             kb = InlineKeyboardMarkup(row_width=1)
             kb.add(InlineKeyboardButton(
-                "🔒 اضغط للرؤية", url=view_url,
+                "🔒 اضغط للرؤية", callback_data=f"read:{wid}",
             ))
             results.append(
                 InlineQueryResultArticle(

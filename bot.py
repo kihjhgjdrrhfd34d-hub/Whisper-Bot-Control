@@ -557,12 +557,11 @@ def handle_messages(msg: telebot.types.Message):
             location_lon=media["location_lon"],
         )
 
-        # Send whisper message to the target user (URL deep-link button)
-        bot_username = bot.get_me().username
+        # Send whisper message to the target user (callback button)
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(InlineKeyboardButton(
             "🔒 اضغط للرؤية",
-            url=f"tg://resolve?domain={bot_username}&start=view_{wid}",
+            callback_data=f"read:{wid}",
         ))
 
         media_label = {

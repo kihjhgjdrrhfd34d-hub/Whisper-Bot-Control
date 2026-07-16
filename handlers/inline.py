@@ -43,10 +43,9 @@ logger = logging.getLogger(__name__)
 CONTROL_PANEL_TYPES = {"custom"}
 
 
-def _read_button(whisper_id: str, bot_username: str) -> InlineKeyboardMarkup:
+def _read_button(whisper_id: str, bot_username: str = "") -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=1)
-    view_url = f"tg://resolve?domain={bot_username}&start=view_{whisper_id}"
-    kb.add(InlineKeyboardButton("🔒 اضغط للرؤية", url=view_url))
+    kb.add(InlineKeyboardButton("اضغط للرؤية 🔒", callback_data=f"read:{whisper_id}"))
     return kb
 
 
