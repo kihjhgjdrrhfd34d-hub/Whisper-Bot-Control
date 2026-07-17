@@ -27,7 +27,7 @@ from database import (
     get_setting,
 )
 from database.replies import count_replies, get_replies
-from handlers._formatting import _get_sender_display
+from handlers._formatting import _get_sender_display, _fmt_username
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +219,7 @@ def _build_readers_text(whisper_id: str) -> str:
     lines = ["━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "👁️ قائمة القراء", ""]
     for i, r in enumerate(readers, 1):
         name = r.get("first_name") or "مجهول"
-        uname = f"@{r['username']}" if r.get("username") else "—"
+        uname = _fmt_username(r["username"]) if r.get("username") else "—"
         uid = r["user_id"]
         lines.append(f"{i}. 👤 {name}")
         lines.append(f"   {uname}")

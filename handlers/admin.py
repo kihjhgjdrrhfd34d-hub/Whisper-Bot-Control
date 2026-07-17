@@ -21,6 +21,7 @@ from database import (
     remove_mandatory_channel, get_mandatory_channels,
 )
 from config import ADMIN_IDS
+from handlers._formatting import _fmt_username
 
 logger = logging.getLogger(__name__)
 
@@ -362,7 +363,8 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
         if s["top_readers"]:
             for i, r in enumerate(s["top_readers"], 1):
                 name = r["username"] or r["first_name"] or f"مستخدم {r['user_id']}"
-                readers_lines += f"  {i}. @{name} — `{r['read_count']}` قراءة\n"
+                display = _fmt_username(r["username"]) if r.get("username") else name
+                readers_lines += f"  {i}. {display} — `{r['read_count']}` قراءة\n"
         else:
             readers_lines = "  لا توجد قراءات بعد\n"
 
@@ -404,7 +406,7 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             f"الإجمالي: `{total}` مستخدم — صفحة `{page + 1}` من `{pages}`\n"
         ]
         for u in rows:
-            uname = f"@{u['username']}" if u["username"] else u["first_name"] or "مجهول"
+            uname = _fmt_username(u["username"]) if u["username"] else (u["first_name"] or "مجهول")
             # Truncate long names to keep message short
             uname = uname[:20]
             banned_mark = " 🚫" if u["is_banned"] else " ✅"

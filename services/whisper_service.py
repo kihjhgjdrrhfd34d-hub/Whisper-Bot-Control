@@ -153,7 +153,7 @@ def build_curious_report_lines(curious: list, readers: list) -> list:
     ]
     for i, row in enumerate(curious, 1):
         name = row["first_name"] or "مجهول"
-        uname = f"@{row['username']}" if row["username"] else "—"
+        uname = f"@{row['username'].replace('_', '\\_')}" if row["username"] else "—"
         uid = row["user_id"]
         tried_at = str(row["tried_at"])[:16] if row["tried_at"] else "—"
         lines.append(

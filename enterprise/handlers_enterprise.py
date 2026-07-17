@@ -21,6 +21,8 @@ import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
+from handlers._formatting import _fmt_username
+
 logger = logging.getLogger(__name__)
 
 
@@ -94,7 +96,7 @@ def register_enterprise_handlers(bot: telebot.TeleBot, user_states: dict) -> Non
         medals = ["🥇", "🥈", "🥉"]
         for i, r in enumerate(rows):
             medal = medals[i] if i < 3 else f"{i+1}."
-            uname = f"@{r['username']}" if r.get("username") else r.get("first_name") or "مجهول"
+            uname = _fmt_username(r["username"]) if r.get("username") else r.get("first_name") or "مجهول"
             lines.append(f"{medal} {uname} — `{r['xp']}` XP  ({r['rank_title']})")
         kb = InlineKeyboardMarkup()
         kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="ent:close"))
