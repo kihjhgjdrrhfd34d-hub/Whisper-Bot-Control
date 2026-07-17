@@ -459,6 +459,12 @@ def _route_reply(
     header = f"💬 *رد من:*\n{sender_display}\n\n"
 
     sender_id = whisper_row["sender_id"]
+
+    if parent_reply_id:
+        parent_reply = get_reply(parent_reply_id)
+        if parent_reply:
+            sender_id = parent_reply["sender_id"]
+
     if sender_id is None:
         bot.send_message(
             original_msg.chat.id,
