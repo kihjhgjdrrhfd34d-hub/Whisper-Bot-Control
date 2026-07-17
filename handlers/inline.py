@@ -61,6 +61,10 @@ def _read_button(whisper_id: str, bot_username: str = "") -> InlineKeyboardMarku
 
 
 def register_inline_handlers(bot: telebot.TeleBot):
+    try:
+        bot_username = bot.get_me().username
+    except Exception:
+        bot_username = ""
 
     # ── Inline query handler ─────────────────────────────────────────────────
     @bot.inline_handler(func=lambda query: True)
@@ -70,11 +74,6 @@ def register_inline_handlers(bot: telebot.TeleBot):
             upsert_user(user.id, user.username, user.first_name, user.last_name)
         except Exception as e:
             logger.warning(f"upsert_user: {e}")
-
-        try:
-            bot_username = bot.get_me().username
-        except Exception:
-            bot_username = bot.token.split(":")[0]  # fallback
 
         if get_setting("bot_active") != "1":
             try:
