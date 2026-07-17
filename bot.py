@@ -19,6 +19,7 @@ from handlers.admin import (
 from handlers.group_settings import register_group_settings_handlers
 from handlers.stats import register_stats_handlers
 from handlers.dashboard import register_dashboard_handlers
+from handlers._formatting import _fmt_username
 from handlers.media_wizard import register_media_wizard_handlers
 from handlers.media_whispers import register_media_whisper_handlers
 
@@ -56,7 +57,7 @@ def _notify_admins_new_user(user):
         return
     stats = get_stats()
     total = stats["total_users"]
-    uname = f"@{user.username}" if user.username else "—"
+    uname = _fmt_username(user.username) if user.username else "—"
     text = (
         "👾 *مستخدم جديد دخل البوت*\n\n"
         f"👤 الاسم: {user.first_name or '—'}\n"
@@ -75,7 +76,7 @@ def _notify_admins_block(user):
     """Notify admins that a user blocked the bot (if toggle is on)."""
     if get_setting("notify_block") != "1":
         return
-    uname = f"@{user.username}" if user.username else "—"
+    uname = _fmt_username(user.username) if user.username else "—"
     text = (
         "🚫 *قام مستخدم بحظر البوت*\n\n"
         f"👤 الاسم: {user.first_name or '—'}\n"
@@ -93,7 +94,7 @@ def _notify_admins_unblock(user):
     """Notify admins that a user unblocked the bot (if toggle is on)."""
     if get_setting("notify_block") != "1":
         return
-    uname = f"@{user.username}" if user.username else "—"
+    uname = _fmt_username(user.username) if user.username else "—"
     text = (
         "✅ *قام مستخدم بإزالة حظر البوت*\n\n"
         f"👤 الاسم: {user.first_name or '—'}\n"
@@ -626,7 +627,7 @@ def handle_messages(msg: telebot.types.Message):
         else:
             for u in results[:5]:
                 uname = (
-                    f"@{u['username']}"
+                    _fmt_username(u["username"])
                     if u["username"]
                     else u["first_name"] or "مجهول"
                 )
