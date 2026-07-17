@@ -19,24 +19,35 @@ from handlers.media_wizard import (
 )
 
 
-# ── Monkey-patch InlineQuery to expose chat info ────────────────────────────
-# pyTelegramBotAPI 4.21.0 receives the `chat` field from Telegram in **kwargs
-# but does not store it.  We patch __init__ to preserve it as self._chat.
+# ── InlineQuery subclass that preserves the chat field ─────────────────────
+# pyTelegramBotAPI 4.x receives the `chat` field from Telegram in **kwargs
+# but does not store it.  This subclass preserves it as self._chat via a
+# custom de_json that returns InlineQueryWithChat instances.
 import telebot.types as _types
-_orig_inline_init = _types.InlineQuery.__init__
-def _inline_init_with_chat(self, id, from_user, query, offset, chat_type=None, location=None, **kwargs):
-    _orig_inline_init(self, id, from_user, query, offset, chat_type=chat_type, location=location)
-    chat_data = kwargs.get('chat')
-    if chat_data is not None:
-        try:
-            from telebot.types import Chat
-            self._chat = Chat.de_json(chat_data) if isinstance(chat_data, (dict, str)) else chat_data
-        except Exception:
-            self._chat = None
-    else:
-        self._chat = None
-_types.InlineQuery.__init__ = _inline_init_with_chat
 
+class InlineQueryWithChat(_types.InlineQuery):
+    @classmethod
+    def de_json(cls, json_string):
+        if json_string is None:
+            return None
+        obj = cls.check_json(json_string)
+        obj['from_user'] = _types.User.de_json(obj.pop('from'))
+        if 'location' in obj:
+            obj['location'] = _types.Location.de_json(obj['location'])
+        return cls(**obj)
+
+    def __init__(self, id, from_user, query, offset, chat_type=None, location=None, **kwargs):
+        chat_data = kwargs.pop('chat', None)
+        super().__init__(id, from_user, query, offset, chat_type=chat_type, location=location, **kwargs)
+        if chat_data is not None:
+            try:
+                self._chat = _types.Chat.de_json(chat_data) if isinstance(chat_data, (dict, str)) else chat_data
+            except Exception:
+                self._chat = None
+        else:
+            self._chat = None
+
+_types.InlineQuery.de_json = InlineQueryWithChat.de_json
 logger = logging.getLogger(__name__)
 
 # Whisper types that receive a control-panel DM after being sent
