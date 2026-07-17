@@ -196,6 +196,7 @@ def _register_message_handlers(bot, user_states):
             "audio":    "🎵 هذه همسة تحتوي على ملف صوتي",
             "document": "📄 هذه همسة تحتوي على مستند",
             "location": "📍 هذه همسة تحتوي على موقع",
+            "animation": "🎞 هذه همسة تحتوي على متحركة",
         }.get(media["message_type"], "📎 هذه همسة تحتوي على وسائط")
 
         try:
@@ -239,6 +240,10 @@ def _register_message_handlers(bot, user_states):
     @bot.message_handler(content_types=["location"])
     def _media_location_reply(msg: telebot.types.Message):
         _handle_media_reply(msg, "location")
+
+    @bot.message_handler(content_types=["animation"])
+    def _media_animation_reply(msg: telebot.types.Message):
+        _handle_media_reply(msg, "animation")
 
     # ─── /mwhisper command: send media whisper by user ID ────────────────
     @bot.message_handler(commands=["mwhisper"])
@@ -479,6 +484,7 @@ def _register_callback_handlers(bot, user_states):
                     "audio": "🎵 ملف صوتي",
                     "document": "📄 مستند",
                     "location": "📍 موقع",
+                    "animation": "🎞 متحركة",
                 }.get(w_dict["message_type"], w_dict["message_type"])
                 caption = w_dict.get("content") or w_dict.get("caption") or ""
                 alert_text = f"🤫 {mt_label}"
