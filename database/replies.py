@@ -246,7 +246,9 @@ def can_reply_to_whisper(whisper_id: str, user_id: int):
     Rules
     -----
     - Whisper must exist.
-    - Whisper must not be locked.
+    - Whisper must not be closed.
+    - When locked manually (non-destructive): all replies blocked.
+    - When locked destructively: sender and existing readers may reply.
     - user_id must be the sender OR an authorised reader.
     - Reply cap must not be exceeded.
     - Ban check is the caller's responsibility.
@@ -255,7 +257,8 @@ def can_reply_to_whisper(whisper_id: str, user_id: int):
     """
     with get_conn() as conn:
         w = conn.execute(
-            "SELECT sender_id, is_locked, is_closed FROM whispers WHERE whisper_id=?",
+            "SELECT sender_id, is_locked, is_closed, is_destructive"
+            " FROM whispers WHERE whisper_id=?",
             (whisper_id,),
         ).fetchone()
 
@@ -266,18 +269,28 @@ def can_reply_to_whisper(whisper_id: str, user_id: int):
     if w.get("is_closed", 0):
         return False, "whisper_locked"
 
-    if w["is_locked"]:
+    # ── Manual lock (non-destructive): block everyone ───────────────
+    if w["is_locked"] and not w.get("is_destructive", 0):
         return False, "whisper_locked"
 
-    if user_id != w["sender_id"]:
+    # ── Determine if user is a participant ──────────────────────────
+    is_sender = (user_id == w["sender_id"])
+    is_reader = False
+    if not is_sender:
         with get_conn() as conn:
             is_reader = conn.execute(
                 "SELECT 1 FROM whisper_readers"
                 " WHERE whisper_id=? AND user_id=?",
                 (whisper_id, user_id),
-            ).fetchone()
-        if not is_reader:
-            return False, "not_participant"
+            ).fetchone() is not None
+
+    # ── Destructive lock: only participants may reply ───────────────
+    if w["is_locked"] and not is_sender and not is_reader:
+        return False, "whisper_locked"
+
+    # ── Non-participants cannot reply (even when unlocked) ──────────
+    if not is_sender and not is_reader:
+        return False, "not_participant"
 
     current = count_replies(whisper_id)
     if current >= MAX_REPLIES_PER_WHISPER:
@@ -307,3 +320,12 @@ def get_whisper_participants(whisper_id: str) -> dict:
         "sender_id": w["sender_id"],
         "reader_ids": [r["user_id"] for r in readers],
     }
+
+
+# ── PostgreSQL shadow adapter ────────────────────────────────────────────
+try:
+    from database.postgres import USE_POSTGRES
+    if USE_POSTGRES:
+        from database.pg_replies import *  # noqa: F401, F403
+except ImportError:
+    pass

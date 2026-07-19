@@ -128,3 +128,9 @@ def count_unread(user_id):
         ).fetchone()
         return row[0] if row else 0
 
+
+# ── PostgreSQL shadow adapter ────────────────────────────────────────────
+from database.postgres import USE_POSTGRES
+if USE_POSTGRES:
+    from database.pg_personal import *  # noqa: F401, F403
+

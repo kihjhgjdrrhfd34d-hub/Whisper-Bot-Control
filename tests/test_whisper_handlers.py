@@ -562,9 +562,8 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
         self.assertEqual(len(notification_calls), 0,
                          "No DM notification for sender reading own whisper")
 
-    def test_public_whisper_keyboard_updated_without_reader_names(self):
-        """Verify public whisper does NOT edit the channel message
-        and does NOT add reader name buttons."""
+    def test_public_whisper_keyboard_updated_with_reactions(self):
+        """Verify public whisper now gets reaction buttons after first read."""
         bot = MagicMock()
         handlers = self._capture_handlers(bot)
 
@@ -587,14 +586,13 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
 
         read_handler(call)
 
-        # edit_message_reply_markup should NOT be called for everyone whispers
-        # (channel message stays unchanged)
+        # everyone type: keyboard now updates with reaction buttons
         edit_calls = [
             c for c in bot.edit_message_reply_markup.mock_calls
             if c[0] == ''
         ]
-        self.assertEqual(len(edit_calls), 0,
-                         "edit_message_reply_markup must NOT be called for everyone whispers")
+        self.assertEqual(len(edit_calls), 1,
+                         "edit_message_reply_markup must be called to add reactions to everyone whispers")
 
         # The whisper stays unlocked
         w = get_whisper(self.wid)
@@ -636,7 +634,7 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
             c for c in bot.send_message.mock_calls
             if (len(c.args) >= 2
                 and isinstance(c.args[1], str)
-                and "تم فتح همستك العامة" in c.args[1])
+                and "بقراءة همستك للجميع" in c.args[1])
         ]
         self.assertEqual(len(notification_calls), 1,
                          "Notification must be sent when read_notifications is enabled")
@@ -679,7 +677,7 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
             c for c in bot.send_message.mock_calls
             if (len(c.args) >= 2
                 and isinstance(c.args[1], str)
-                and "تم فتح همستك العامة" in c.args[1])
+                and "بقراءة همستك للجميع" in c.args[1])
         ]
         self.assertEqual(len(notification_calls), 1,
                          "Everyone notification must always be sent regardless of read_notifications setting")
@@ -688,6 +686,98 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
         w = get_whisper(self.wid)
         self.assertEqual(w["is_locked"], 0,
                          "Whisper must stay unlocked regardless of notification setting")
+
+
+    # ── New tests: reader names in first_one + everyone notify ────────
+
+    def test_first_one_reader_name_appears_in_get_readers(self):
+        """After reading a first_one whisper, get_readers() must return
+        a non-empty list containing the reader's display name."""
+        bot = MagicMock()
+        handlers = self._capture_handlers(bot)
+
+        from handlers.whisper import _register_callback_handlers
+        _register_callback_handlers(bot, {})
+
+        read_handler = self._find_read_handler(handlers)
+        self.assertIsNotNone(read_handler)
+
+        wid = create_whisper(self.sender_id, "first only", "first_one")
+        reader_id = 60002
+        reader_name = "أحمد"
+        upsert_user(reader_id, "ahmed", reader_name, None)
+
+        call = MagicMock()
+        call.from_user.id = reader_id
+        call.from_user.username = "ahmed"
+        call.from_user.first_name = reader_name
+        call.data = f"read:{wid}"
+        call.message = MagicMock()
+        call.message.chat.id = -100
+        call.message.message_id = 2
+        call.inline_message_id = None
+        call.id = "cb_first_one"
+
+        read_handler(call)
+
+        readers = get_readers(wid)
+        self.assertGreater(len(readers), 0,
+                           "get_readers() must return at least one reader after a read")
+        self.assertEqual(readers[0]["first_name"], reader_name,
+                         "The first reader's name must match the reader who clicked")
+        self.assertIn(reader_name, [r.get("first_name") for r in readers],
+                      "Reader name must appear in the readers list")
+
+    def test_everyone_notify_sender_reader_name_called(self):
+        """For everyone whispers, a simple notification DM must be sent
+        with the reader's first_name."""
+        bot = MagicMock()
+        handlers = self._capture_handlers(bot)
+
+        from handlers.whisper import _register_callback_handlers
+        _register_callback_handlers(bot, {})
+
+        read_handler = self._find_read_handler(handlers)
+        self.assertIsNotNone(read_handler)
+
+        chat_id = -100
+        db.ensure_group_settings(chat_id)
+        wid = create_whisper(self.sender_id, "everyone test", "everyone")
+        reader_id = 60002
+        upsert_user(reader_id, "bob", "Bob", None)
+
+        call = MagicMock()
+        call.from_user.id = reader_id
+        call.from_user.username = "bob"
+        call.from_user.first_name = "Bob"
+        call.data = f"read:{wid}"
+        call.message = MagicMock()
+        call.message.chat.id = chat_id
+        call.message.message_id = 2
+        call.inline_message_id = None
+        call.id = "cb_everyone_name"
+
+        read_handler(call)
+
+        # For everyone: notify sender with "👤 قام Bob بقراءة همستك للجميع للتو!"
+        notify_calls = [
+            c for c in bot.send_message.mock_calls
+            if (len(c.args) >= 2
+                and isinstance(c.args[1], str)
+                and "بقراءة همستك للجميع" in c.args[1])
+        ]
+        self.assertGreaterEqual(
+            len(notify_calls), 1,
+            "A notification must be sent for everyone whispers"
+        )
+        # Verify the notification mentions the reader's name
+        self.assertTrue(
+            any("Bob" in c.args[1] for c in notify_calls),
+            "The reader's display name must appear in the notification"
+        )
+        # Verify the read was recorded
+        self.assertEqual(reader_count(wid), 1,
+                         "Read must be recorded in DB")
 
 
 if __name__ == "__main__":

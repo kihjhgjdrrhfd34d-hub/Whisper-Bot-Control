@@ -57,8 +57,8 @@ class TestOpenOnceTextFirstOne(unittest.TestCase):
         )
 
     def test_button_changes_after_first_read(self):
-        """After first successful read, _update_group_keyboard should
-        produce a button with _OPENED_LABEL and callback_data='opened:{wid}'."""
+        """After first successful read, _build_opened_keyboard should
+        produce a button with _OPENED_LABEL and callback_data='noop'."""
         from handlers.whisper import _OPENED_LABEL, _build_opened_keyboard
 
         # Record the read
@@ -67,11 +67,17 @@ class TestOpenOnceTextFirstOne(unittest.TestCase):
         self.assertTrue(is_first)
 
         # Verify the keyboard builder produces the opened keyboard
-        kb = _build_opened_keyboard(self.wid, "TestBot")
-        self.assertEqual(len(kb.keyboard), 1)
+        readers = db.get_readers(self.wid)
+        kb = _build_opened_keyboard(self.wid, readers=readers)
+        # Row 0: opened label, Row 1: reader name (Bob), Row 2: reactions
+        self.assertEqual(len(kb.keyboard), 3)
         btn = kb.keyboard[0][0]
         self.assertEqual(btn.text, _OPENED_LABEL)
-        self.assertEqual(btn.callback_data, f"opened:{self.wid}")
+        self.assertEqual(btn.callback_data, "noop")
+        name_btn = kb.keyboard[1][0]
+        self.assertIn("Bob", name_btn.text)
+        like_btn = kb.keyboard[2][0]
+        self.assertIn("❤️", like_btn.text)
 
     def test_stored_group_message_coords(self):
         """Whisper record should have group_inline_message_id stored."""
@@ -123,7 +129,7 @@ class TestOpenOnceTextFirstThree(unittest.TestCase):
 
     def test_button_stays_until_three_readers(self):
         """Button stays as 'read:' until 3 readers have read."""
-        from handlers.whisper import _OPENED_LABEL
+        from handlers.whisper import _OPENED_LABEL, _BEFOREAD_LABEL
         from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
         # First two readers
@@ -133,7 +139,7 @@ class TestOpenOnceTextFirstThree(unittest.TestCase):
         count = reader_count(self.wid)
         self.assertEqual(count, 2)
 
-        # Simulate what _update_group_keyboard would build
+        # After 2 readers, _update_group_keyboard keeps active button
         from database import get_readers
         readers = get_readers(self.wid)
         rc = len(readers)
@@ -141,15 +147,15 @@ class TestOpenOnceTextFirstThree(unittest.TestCase):
         kb = InlineKeyboardMarkup(row_width=1)
         if rc >= 3:
             kb.add(InlineKeyboardButton(
-                _OPENED_LABEL, callback_data=f"opened:{self.wid}",
+                _OPENED_LABEL, callback_data="noop",
             ))
         else:
             kb.add(InlineKeyboardButton(
-                "🔒 اضغط للرؤية", url=f"tg://resolve?domain=TestBot&start=view_{self.wid}",
+                _BEFOREAD_LABEL, callback_data=f"read:{self.wid}",
             ))
 
         btn = kb.keyboard[0][0]
-        self.assertIn("view_", btn.url)
+        self.assertIn("read:", btn.callback_data)
 
         # Third reader
         upsert_user(1004, "dave", "Dave", None)
@@ -157,22 +163,22 @@ class TestOpenOnceTextFirstThree(unittest.TestCase):
         count = reader_count(self.wid)
         self.assertEqual(count, 3)
 
-        # Now button should change
+        # Now button should change to opened with noop callback
         readers = get_readers(self.wid)
         rc = len(readers)
         kb2 = InlineKeyboardMarkup(row_width=1)
         if rc >= 3:
             kb2.add(InlineKeyboardButton(
-                _OPENED_LABEL, callback_data=f"opened:{self.wid}",
+                _OPENED_LABEL, callback_data="noop",
             ))
         else:
             kb2.add(InlineKeyboardButton(
-                "🔒 اضغط للرؤية", url=f"tg://resolve?domain=TestBot&start=view_{self.wid}",
+                _BEFOREAD_LABEL, callback_data=f"read:{self.wid}",
             ))
 
         btn2 = kb2.keyboard[0][0]
         self.assertEqual(btn2.text, _OPENED_LABEL)
-        self.assertEqual(btn2.callback_data, f"opened:{self.wid}")
+        self.assertEqual(btn2.callback_data, "noop")
 
     def test_stored_group_chat_and_message(self):
         """Whisper record should have group_chat_id and group_message_id."""
@@ -203,10 +209,17 @@ class TestOpenOnceMediaWhisper(unittest.TestCase):
         is_new, is_first = record_read_and_check(self.wid, 1002)
         self.assertTrue(is_new)
 
-        kb = _build_opened_keyboard(self.wid, "TestBot")
+        readers = db.get_readers(self.wid)
+        kb = _build_opened_keyboard(self.wid, readers=readers)
+        # Row 0: opened label, Row 1: reader name (Bob), Row 2: reactions
+        self.assertEqual(len(kb.keyboard), 3)
         btn = kb.keyboard[0][0]
         self.assertEqual(btn.text, _OPENED_LABEL)
-        self.assertEqual(btn.callback_data, f"opened:{self.wid}")
+        self.assertEqual(btn.callback_data, "noop")
+        name_btn = kb.keyboard[1][0]
+        self.assertIn("Bob", name_btn.text)
+        like_btn = kb.keyboard[2][0]
+        self.assertIn("❤️", like_btn.text)
 
 class TestDeepLinkOpenOnce(unittest.TestCase):
     """Deep-link open: group message should be edited to opened state."""
@@ -252,7 +265,7 @@ class TestDeepLinkOpenOnce(unittest.TestCase):
 
 
 class TestEveryoneWhisperNotOpened(unittest.TestCase):
-    """everyone whisper should NOT change to opened — stays active."""
+    """everyone whisper should keep read button AND add reaction buttons."""
 
     def setUp(self):
         _boot()
@@ -261,29 +274,25 @@ class TestEveryoneWhisperNotOpened(unittest.TestCase):
             whisper_type="everyone", max_readers=0,
         )
 
-    def test_everyone_stays_read_after_first_read(self):
-        """Everyone whisper button stays as 'read:' after first read."""
-        from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+    def test_everyone_has_read_and_reaction_buttons(self):
+        """Everyone whisper: _build_opened_keyboard returns keyboard with
+        read button + reaction buttons."""
+        from handlers.whisper import _BEFOREAD_LABEL, _build_opened_keyboard
 
         record_read_and_check(self.wid, 1002)
 
-        from database import get_readers
-        readers = get_readers(self.wid)
-        rc = len(readers)
-
-        kb = InlineKeyboardMarkup(row_width=1)
-        if rc >= 3:
-            kb.add(InlineKeyboardButton(
-                "✔️ لقد تم فتح الهمسة", callback_data=f"opened:{self.wid}",
-            ))
-        else:
-            kb.add(InlineKeyboardButton(
-                "اضغط للرؤيه 🔒", callback_data=f"read:{self.wid}",
-            ))
-
-        btn = kb.keyboard[0][0]
-        # For 'everyone' type, the handler always adds 'read:' button
-        self.assertEqual(btn.callback_data, f"read:{self.wid}")
+        kb = _build_opened_keyboard(self.wid)
+        self.assertIsNotNone(kb)
+        # Row 0: read button
+        btn0 = kb.keyboard[0][0]
+        self.assertEqual(btn0.text, _BEFOREAD_LABEL)
+        self.assertIn("read:", btn0.callback_data)
+        # Row 1: like + dislike buttons
+        self.assertEqual(len(kb.keyboard), 2)
+        like_btn = kb.keyboard[1][0]
+        dislike_btn = kb.keyboard[1][1]
+        self.assertIn("❤️", like_btn.text)
+        self.assertIn("👎", dislike_btn.text)
 
 
 if __name__ == "__main__":
