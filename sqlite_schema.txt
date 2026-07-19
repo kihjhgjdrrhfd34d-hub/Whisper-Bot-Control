@@ -1,0 +1,246 @@
+CREATE TABLE users (
+                user_id     INTEGER PRIMARY KEY,
+                username    TEXT,
+                first_name  TEXT,
+                last_name   TEXT,
+                created_at  TEXT DEFAULT (datetime('now')),
+                is_banned   INTEGER DEFAULT 0,
+                started     INTEGER DEFAULT 0
+            , referral_code TEXT, referred_by INTEGER);
+CREATE TABLE whispers (
+                whisper_id      TEXT PRIMARY KEY,
+                sender_id       INTEGER NOT NULL,
+                content         TEXT NOT NULL,
+                whisper_type    TEXT NOT NULL,
+                target_users    TEXT DEFAULT '[]',
+                max_readers     INTEGER DEFAULT 0,
+                is_locked       INTEGER DEFAULT 0,
+                created_at      TEXT DEFAULT (datetime('now')),
+                auto_delete_at  TEXT,
+                is_destructive  INTEGER DEFAULT 0,
+                message_type    TEXT,
+                file_id         TEXT,
+                caption         TEXT,
+                location_lat    REAL,
+                location_lon    REAL, is_closed INTEGER DEFAULT 0, is_pinned INTEGER DEFAULT 0, media_type TEXT, group_chat_id INTEGER, group_message_id INTEGER, group_inline_message_id TEXT, is_anonymous INTEGER DEFAULT 0, is_self_destruct INTEGER DEFAULT 0, parent_whisper_id TEXT, is_archived INTEGER DEFAULT 0,
+                FOREIGN KEY (sender_id) REFERENCES users(user_id)
+            );
+CREATE TABLE whisper_readers (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                whisper_id  TEXT NOT NULL,
+                user_id     INTEGER NOT NULL,
+                read_at     TEXT DEFAULT (datetime('now')),
+                UNIQUE(whisper_id, user_id),
+                FOREIGN KEY (whisper_id) REFERENCES whispers(whisper_id)
+            );
+CREATE TABLE sqlite_sequence(name,seq);
+CREATE TABLE curious_ones (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                whisper_id  TEXT NOT NULL,
+                user_id     INTEGER NOT NULL,
+                tried_at    TEXT DEFAULT (datetime('now')),
+                UNIQUE(whisper_id, user_id),
+                FOREIGN KEY (whisper_id) REFERENCES whispers(whisper_id)
+            );
+CREATE TABLE settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+CREATE TABLE mandatory_channels (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id   TEXT NOT NULL UNIQUE,
+                channel_name TEXT
+            );
+CREATE TABLE broadcasts (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                content    TEXT,
+                media_type TEXT,
+                file_id    TEXT,
+                sent_at    TEXT DEFAULT (datetime('now')),
+                sent_by    INTEGER
+            );
+CREATE TABLE group_settings (
+                chat_id                 INTEGER PRIMARY KEY,
+                public_whispers_enabled INTEGER DEFAULT 1,
+                anonymous_enabled       INTEGER DEFAULT 1,
+                read_notifications      INTEGER DEFAULT 1,
+                auto_delete_minutes     INTEGER DEFAULT 0,
+                spam_limit_enabled      INTEGER DEFAULT 1,
+                spam_limit_count        INTEGER DEFAULT 5,
+                spam_limit_window_seconds INTEGER DEFAULT 60
+            );
+CREATE TABLE whisper_timestamps (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                chat_id     INTEGER NOT NULL,
+                created_at  TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            );
+CREATE TABLE pending_media_whispers (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id      INTEGER NOT NULL,
+                message_type TEXT NOT NULL,
+                file_id      TEXT NOT NULL,
+                caption      TEXT,
+                content      TEXT,
+                created_at   TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            );
+CREATE INDEX idx_whispers_sender
+                ON whispers(sender_id);
+CREATE INDEX idx_whispers_auto_delete
+                ON whispers(auto_delete_at)
+                WHERE auto_delete_at IS NOT NULL;
+CREATE INDEX idx_wr_whisper
+                ON whisper_readers(whisper_id);
+CREATE INDEX idx_wr_user
+                ON whisper_readers(user_id);
+CREATE INDEX idx_curious_whisper
+                ON curious_ones(whisper_id);
+CREATE INDEX idx_users_username
+                ON users(username)
+                WHERE username IS NOT NULL;
+CREATE INDEX idx_users_created
+                ON users(created_at);
+CREATE INDEX idx_wt_lookup
+                ON whisper_timestamps(user_id, chat_id, created_at);
+CREATE INDEX idx_pmw_user
+                ON pending_media_whispers(user_id);
+CREATE TABLE whisper_replies (
+                reply_id    TEXT PRIMARY KEY,
+                whisper_id  TEXT NOT NULL,
+                sender_id   INTEGER NOT NULL,
+                parent_reply_id TEXT,
+                content     TEXT NOT NULL DEFAULT '',
+                media_type  TEXT,
+                file_id     TEXT,
+                created_at  TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (whisper_id) REFERENCES whispers(whisper_id)
+                    ON DELETE CASCADE
+            );
+CREATE TABLE reply_reads (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                reply_id  TEXT NOT NULL,
+                user_id   INTEGER NOT NULL,
+                read_at   TEXT DEFAULT (datetime('now')),
+                UNIQUE(reply_id, user_id),
+                FOREIGN KEY (reply_id) REFERENCES whisper_replies(reply_id)
+                    ON DELETE CASCADE
+            );
+CREATE INDEX idx_replies_whisper
+                ON whisper_replies(whisper_id);
+CREATE INDEX idx_replies_sender
+                ON whisper_replies(sender_id);
+CREATE INDEX idx_reply_reads_reply
+                ON reply_reads(reply_id);
+CREATE TABLE user_xp (
+                user_id     INTEGER PRIMARY KEY,
+                xp          INTEGER DEFAULT 0,
+                level       INTEGER DEFAULT 1,
+                rank_title  TEXT    DEFAULT 'مبتدئ',
+                updated_at  TEXT    DEFAULT (datetime('now'))
+            );
+CREATE TABLE achievements (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                code        TEXT NOT NULL UNIQUE,
+                title       TEXT NOT NULL,
+                description TEXT,
+                icon        TEXT DEFAULT '🏆',
+                xp_reward   INTEGER DEFAULT 0
+            );
+CREATE TABLE user_achievements (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                code        TEXT NOT NULL,
+                earned_at   TEXT DEFAULT (datetime('now')),
+                UNIQUE(user_id, code)
+            );
+CREATE TABLE invites (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                inviter_id  INTEGER NOT NULL,
+                invitee_id  INTEGER NOT NULL UNIQUE,
+                invited_at  TEXT DEFAULT (datetime('now'))
+            );
+CREATE TABLE activity_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                action      TEXT NOT NULL,
+                meta        TEXT,
+                created_at  TEXT DEFAULT (datetime('now'))
+            );
+CREATE TABLE reports (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                reporter_id  INTEGER NOT NULL,
+                whisper_id   TEXT,
+                reason       TEXT,
+                status       TEXT DEFAULT 'pending',
+                reviewed_by  INTEGER,
+                reviewed_at  TEXT,
+                created_at   TEXT DEFAULT (datetime('now'))
+            );
+CREATE TABLE ban_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                action      TEXT NOT NULL,
+                reason      TEXT,
+                banned_by   INTEGER,
+                expires_at  TEXT,
+                created_at  TEXT DEFAULT (datetime('now'))
+            );
+CREATE TABLE temp_bans (
+                user_id     INTEGER PRIMARY KEY,
+                reason      TEXT,
+                banned_by   INTEGER,
+                expires_at  TEXT NOT NULL,
+                created_at  TEXT DEFAULT (datetime('now'))
+            );
+CREATE TABLE backup_registry (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename    TEXT NOT NULL UNIQUE,
+                size_bytes  INTEGER,
+                created_at  TEXT DEFAULT (datetime('now')),
+                created_by  INTEGER,
+                notes       TEXT
+            );
+CREATE TABLE stats_snapshots (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                period_type  TEXT NOT NULL,
+                period_label TEXT NOT NULL,
+                data_json    TEXT NOT NULL,
+                created_at   TEXT DEFAULT (datetime('now')),
+                UNIQUE(period_type, period_label)
+            );
+CREATE TABLE whisper_favorites (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                whisper_id  TEXT NOT NULL,
+                saved_at    TEXT DEFAULT (datetime('now')),
+                UNIQUE(user_id, whisper_id)
+            );
+CREATE TABLE whisper_archive (
+                whisper_id   TEXT PRIMARY KEY,
+                sender_id    INTEGER NOT NULL,
+                content      TEXT NOT NULL,
+                whisper_type TEXT NOT NULL,
+                archived_at  TEXT DEFAULT (datetime('now')),
+                original_data TEXT
+            );
+CREATE TABLE whisper_destruct (
+                whisper_id   TEXT PRIMARY KEY,
+                destruct_on  TEXT,
+                after_reads  INTEGER DEFAULT 0
+            );
+CREATE TABLE personal_whispers (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                whisper_id      TEXT NOT NULL UNIQUE,
+                sender_id       INTEGER NOT NULL,
+                recipient_id    INTEGER NOT NULL,
+                content         TEXT NOT NULL,
+                is_read         INTEGER DEFAULT 0,
+                read_at         TEXT,
+                created_at      TEXT DEFAULT (datetime('now'))
+            );
+CREATE INDEX idx_pw_sender
+                ON personal_whispers(sender_id);
+CREATE INDEX idx_pw_recipient
+                ON personal_whispers(recipient_id);
