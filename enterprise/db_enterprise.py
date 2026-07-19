@@ -27,7 +27,7 @@ from database import get_conn, DATABASE_PATH    # noqa: E402  (import after path
 # MIGRATION VERSION TRACKING
 # ═════════════════════════════════════════════════════════════════════════════
 
-ENTERPRISE_SCHEMA_VERSION = 3   # bump this when adding new enterprise tables
+ENTERPRISE_SCHEMA_VERSION = 4   # bump this when adding new enterprise tables
 
 
 def get_schema_version() -> int:
@@ -160,6 +160,15 @@ def init_enterprise_db() -> None:
                 user_id     INTEGER NOT NULL,
                 whisper_id  TEXT NOT NULL,
                 saved_at    TEXT DEFAULT (datetime('now')),
+                UNIQUE(user_id, whisper_id)
+            );
+
+            -- ── Whisper Dislikes ──────────────────────────────────────────
+            CREATE TABLE IF NOT EXISTS whisper_dislikes (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                whisper_id  TEXT NOT NULL,
+                disliked_at TEXT DEFAULT (datetime('now')),
                 UNIQUE(user_id, whisper_id)
             );
 
@@ -713,8 +722,9 @@ def save_favorite(user_id: int, whisper_id: str) -> bool:
                 "INSERT OR IGNORE INTO whisper_favorites (user_id, whisper_id) VALUES (?,?)",
                 (user_id, whisper_id),
             )
+            inserted = conn.execute("SELECT changes()").fetchone()[0]
             conn.commit()
-        return True
+        return inserted == 1
     except Exception:
         return False
 
@@ -745,6 +755,61 @@ def count_saved_whispers(user_id: int) -> int:
         return conn.execute(
             "SELECT COUNT(*) FROM whisper_favorites WHERE user_id=?", (user_id,)
         ).fetchone()[0]
+
+
+def count_whisper_likes(whisper_id: str) -> int:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM whisper_favorites WHERE whisper_id=?", (whisper_id,)
+        ).fetchone()[0]
+
+
+def has_user_liked(user_id: int, whisper_id: str) -> bool:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM whisper_favorites WHERE user_id=? AND whisper_id=?",
+            (user_id, whisper_id),
+        ).fetchone()
+        return row is not None
+
+
+def save_dislike(user_id: int, whisper_id: str) -> bool:
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO whisper_dislikes (user_id, whisper_id) VALUES (?,?)",
+                (user_id, whisper_id),
+            )
+            inserted = conn.execute("SELECT changes()").fetchone()[0]
+            conn.commit()
+        return inserted == 1
+    except Exception:
+        return False
+
+
+def remove_dislike(user_id: int, whisper_id: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM whisper_dislikes WHERE user_id=? AND whisper_id=?",
+            (user_id, whisper_id),
+        )
+        conn.commit()
+
+
+def count_whisper_dislikes(whisper_id: str) -> int:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM whisper_dislikes WHERE whisper_id=?", (whisper_id,)
+        ).fetchone()[0]
+
+
+def has_user_disliked(user_id: int, whisper_id: str) -> bool:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM whisper_dislikes WHERE user_id=? AND whisper_id=?",
+            (user_id, whisper_id),
+        ).fetchone()
+        return row is not None
 
 
 def archive_whisper(whisper_id: str) -> bool:
@@ -1032,3 +1097,16 @@ class DatabaseAdapter:
 
 
 db = DatabaseAdapter()
+
+
+# ── PostgreSQL shadow adapter ────────────────────────────────────────────
+try:
+    from database.postgres import USE_POSTGRES
+except ImportError:
+    USE_POSTGRES = False
+
+if USE_POSTGRES:
+    try:
+        from enterprise.pg_enterprise import *  # noqa: F401, F403
+    except ImportError:
+        pass

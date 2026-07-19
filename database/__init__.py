@@ -1,8 +1,11 @@
+import logging
 import sqlite3
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from config import DATABASE_PATH, DEFAULT_SETTINGS, GROUP_DEFAULT_SETTINGS
+
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -581,6 +584,7 @@ def add_reader_if_new(whisper_id: str, user_id: int) -> bool:
     NOTE: This low-level function does NOT manage the is_locked flag.
     Use record_whisper_read() instead when you want type-aware locking.
     """
+    logger.debug("[DB] add_reader_if_new whisper_id=%s user_id=%s", whisper_id, user_id)
     with get_conn() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO whisper_readers (whisper_id, user_id) VALUES (?, ?)",
@@ -588,6 +592,7 @@ def add_reader_if_new(whisper_id: str, user_id: int) -> bool:
         )
         inserted = conn.execute("SELECT changes()").fetchone()[0]
         conn.commit()
+    logger.debug("[DB] add_reader_if_new -> %s (changes=%s)", inserted == 1, inserted)
     return inserted == 1
 
 
@@ -1088,3 +1093,9 @@ def cleanup_stale_pending_media(hours=1):
             (cutoff,),
         )
         conn.commit()
+
+
+# ── PostgreSQL shadow adapter ────────────────────────────────────────────
+from database.postgres import USE_POSTGRES
+if USE_POSTGRES:
+    from database.pg_core import *  # noqa: F401, F403

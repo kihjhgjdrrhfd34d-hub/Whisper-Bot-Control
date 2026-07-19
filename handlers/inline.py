@@ -11,6 +11,7 @@ from database import (
     create_whisper, get_setting, upsert_user, get_group_settings,
     check_whisper_rate_limit, record_whisper_timestamp, SPAM_BLOCK_MESSAGE,
     get_whisper, get_pending_media_by_id, delete_pending_media_by_id,
+    update_whisper_group_message,
 )
 from handlers.dashboard import send_dashboard
 from handlers.media_wizard import (
@@ -357,6 +358,14 @@ def register_inline_handlers(bot: telebot.TeleBot):
             _, wtype, wid = result_id.split(":", 2)
         else:
             wtype, wid = result_id.split(":", 1)
+
+        # ── Store inline_message_id for group button editing ────────────
+        if result.inline_message_id:
+            try:
+                update_whisper_group_message(wid, inline_message_id=result.inline_message_id)
+                logger.info("[INLINE] stored inline_message_id for wid=%s", wid)
+            except Exception as exc:
+                logger.warning("[INLINE] failed to store inline_message_id for wid=%s: %s", wid, exc)
 
         # ── Old control panel (custom whispers only, backward compat) ─────
         if wtype in CONTROL_PANEL_TYPES:

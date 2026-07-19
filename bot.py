@@ -347,38 +347,39 @@ def start_cmd(msg: telebot.types.Message):
                 bot.send_message(msg.chat.id, "🔒 هذه الهمسة غير موجودة أو تم مشاهدتها بالفعل")
                 return
 
+        # ── Update group keyboard after read (single source of truth) ──
+        if is_new_read:
+            try:
+                all_readers = get_readers(whisper_id_payload)
+                from handlers.whisper import _update_group_keyboard
+                _update_group_keyboard(bot, whisper_id_payload, w_dict, all_readers)
+            except Exception:
+                pass
+
         # ── Apply destructive deletion rules ────────────────────────────
         is_destructive = is_destructive_whisper(w_dict)
         if is_destructive and is_new_read:
             wtype = w_dict.get("whisper_type")
             r_count = reader_count(whisper_id_payload)
-            if wtype in ("first_one", "everyone"):
+            if wtype == "first_one":
                 lock_whisper(whisper_id_payload)
                 delete_whisper(whisper_id_payload)
             elif wtype == "first_three" and r_count >= 3:
                 lock_whisper(whisper_id_payload)
                 delete_whisper(whisper_id_payload)
 
-        # ── Edit group button for open-once (non-destructive only) ──────
-        if is_new_read and not is_destructive:
-            from handlers.whisper import _edit_group_to_opened
-            _edit_group_to_opened(bot, whisper_id_payload)
-
         # ── Notify sender ──────────────────────────────────────────────
+        # first_one / first_three: NO notifications to sender
         if is_new_read:
             sender_id = w_dict["sender_id"]
             wtype = w_dict.get("whisper_type")
-            if wtype == "first_one" and is_first_ever:
+            if wtype == "everyone":
                 try:
-                    bot.send_message(sender_id, build_first_one_notification(user, w_dict), parse_mode="HTML")
+                    reader_first_name = user.first_name or "مستخدم"
+                    bot.send_message(sender_id, f"👤 قام {reader_first_name} بقراءة همستك للجميع للتو!")
                 except Exception:
                     pass
-            elif wtype == "everyone":
-                try:
-                    bot.send_message(sender_id, build_public_whisper_notification(user, w_dict))
-                except Exception:
-                    pass
-            elif get_setting("read_receipt_enabled") == "1":
+            elif get_setting("read_receipt_enabled") == "1" and wtype not in ("first_one", "first_three"):
                 try:
                     bot.send_message(sender_id, build_read_receipt_message(user))
                 except Exception:

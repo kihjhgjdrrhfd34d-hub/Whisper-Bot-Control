@@ -11,6 +11,7 @@ for the Telegram interaction layer.
 
 from __future__ import annotations
 
+import logging
 from telebot.util import escape
 from database import (
     get_whisper, can_read_whisper, record_whisper_read, reader_count,
@@ -50,11 +51,14 @@ def ensure_user(user_id: int, username: str | None,
     """Upsert user record — silently ignore errors."""
     try:
         upsert_user(user_id, username, first_name, last_name)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("[SVC] ensure_user failed for user_id=%s: %s", user_id, exc)
 
 
 # ── Read recording ───────────────────────────────────────────────────
+
+logger = logging.getLogger(__name__)
+
 
 def record_read_and_check(whisper_id: str, user_id: int, display_name: str = "") -> tuple:
     """Record a read and determine if it's the reader's first and the first-ever.
@@ -64,8 +68,13 @@ def record_read_and_check(whisper_id: str, user_id: int, display_name: str = "")
             - is_new_read: True if this user hasn't read it before
             - is_first_ever: True if this is the very first read across all users
     """
+    logger.debug("[SVC] record_read_and_check whisper_id=%s user_id=%s", whisper_id, user_id)
     is_new_read = record_whisper_read(whisper_id, user_id)
     is_first_ever = (reader_count(whisper_id) == 1) if is_new_read else False
+    logger.debug(
+        "[SVC] record_read_and_check -> is_new_read=%s is_first_ever=%s reader_count=%s",
+        is_new_read, is_first_ever, reader_count(whisper_id) if is_new_read else "N/A",
+    )
     return is_new_read, is_first_ever
 
 

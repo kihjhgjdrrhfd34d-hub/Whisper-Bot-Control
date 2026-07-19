@@ -10,6 +10,7 @@ ADMIN_IDS = [
 ]
 
 DATABASE_PATH = os.getenv("DATABASE_PATH", "whispers.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 KEEP_ALIVE_PORT = int(os.getenv("KEEP_ALIVE_PORT", "8080"))
 
 DEFAULT_SETTINGS = {
