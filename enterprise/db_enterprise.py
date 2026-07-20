@@ -1119,6 +1119,4 @@ if USE_POSTGRES:
     for _fn in _INTERACTION_FUNCS:
         _func = globals().get(_fn)
         if _func:
-            logger.info("PG_OVERRIDE: %s loaded from %s", _fn, _func.__module__)
-        else:
-            logger.warning("PG_OVERRIDE: %s NOT FOUND in pg_enterprise", _fn)
+            pass
