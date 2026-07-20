@@ -1028,7 +1028,8 @@ def _register_callback_handlers(bot, user_states):
                 except Exception:
                     pass
             bot.answer_callback_query(call.id, msg, show_alert=True)
-        except Exception:
+        except Exception as e:
+            logger.exception("[LIKE] like failed for whisper_id=%s", whisper_id)
             bot.answer_callback_query(call.id, "⚠️ حدث خطأ.", show_alert=True)
 
     # ─── Dislike (👎 عدم الإعجاب) ──────────────────────────────────────────
@@ -1071,7 +1072,8 @@ def _register_callback_handlers(bot, user_states):
                 except Exception:
                     pass
             bot.answer_callback_query(call.id, msg, show_alert=True)
-        except Exception:
+        except Exception as e:
+            logger.exception("[DISLIKE] dislike failed for whisper_id=%s", whisper_id)
             bot.answer_callback_query(call.id, "⚠️ حدث خطأ.", show_alert=True)
 
 
