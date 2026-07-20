@@ -74,6 +74,14 @@ def main() -> None:
     except Exception as exc:
         logger.error(f"خطأ في تهيئة جداول الظرف الشخصي: {exc}", exc_info=True)
 
+    # ── 3e. Package flow DB init ──────────────────────────────────────────
+    logger.info("🎭 تهيئة جداول الهمسة المغلفة...")
+    try:
+        from database.package_flow import init_package_flow_db
+        init_package_flow_db()
+    except Exception as exc:
+        logger.error(f"خطأ في تهيئة جداول الهمسة المغلفة: {exc}", exc_info=True)
+
     # ── 4. Keep-alive HTTP server ─────────────────────────────────────────────
     logger.info("🌐 تشغيل خادم Keep-Alive (port 8080)...")
     keep_alive()

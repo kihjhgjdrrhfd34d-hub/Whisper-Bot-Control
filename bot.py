@@ -174,6 +174,7 @@ def _main_menu_text_and_kb(b, user):
     )
     kb.add(InlineKeyboardButton("🤫 الهمسات الشخصية", callback_data="pers_menu"))
     kb.add(InlineKeyboardButton("✉️ ظرف شخصي", callback_data="env_new"))
+    kb.add(InlineKeyboardButton("🎭 همسة مغلفة", callback_data="pkg_start"))
     if user.id in ADMIN_IDS:
         kb.add(InlineKeyboardButton("🛡 لوحة التحكم", callback_data="admin:main_new"))
     return text, kb
@@ -718,6 +719,8 @@ def register_all_handlers():
     register_dashboard_handlers(bot, user_states)
     from handlers.envelope import register_envelope_handlers
     register_envelope_handlers(bot, user_states)
+    from handlers.package_flow import register_package_flow_handlers
+    register_package_flow_handlers(bot, user_states)
     register_media_whisper_handlers(bot, user_states)
 
 
