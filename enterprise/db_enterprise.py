@@ -1110,3 +1110,15 @@ if USE_POSTGRES:
         from enterprise.pg_enterprise import *  # noqa: F401, F403
     except ImportError:
         pass
+
+    # ── TEMP: verify source of interaction functions (remove after testing) ──
+    _INTERACTION_FUNCS = [
+        "count_whisper_likes", "has_user_liked", "save_dislike",
+        "remove_dislike", "count_whisper_dislikes", "has_user_disliked",
+    ]
+    for _fn in _INTERACTION_FUNCS:
+        _func = globals().get(_fn)
+        if _func:
+            logger.info("PG_OVERRIDE: %s loaded from %s", _fn, _func.__module__)
+        else:
+            logger.warning("PG_OVERRIDE: %s NOT FOUND in pg_enterprise", _fn)
