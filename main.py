@@ -66,6 +66,14 @@ def main() -> None:
     except Exception as exc:
         logger.error(f"خطأ في تهيئة جداول الهمسات الشخصية: {exc}", exc_info=True)
 
+    # ── 3d. Envelope drafts DB init ────────────────────────────────────────
+    logger.info("✉️ تهيئة جداول الظرف الشخصي...")
+    try:
+        from database.envelope import init_envelope_db
+        init_envelope_db()
+    except Exception as exc:
+        logger.error(f"خطأ في تهيئة جداول الظرف الشخصي: {exc}", exc_info=True)
+
     # ── 4. Keep-alive HTTP server ─────────────────────────────────────────────
     logger.info("🌐 تشغيل خادم Keep-Alive (port 8080)...")
     keep_alive()
