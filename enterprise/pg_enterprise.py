@@ -140,6 +140,14 @@ def init_enterprise_db() -> None:
                 UNIQUE(user_id, whisper_id)
             );
 
+            CREATE TABLE IF NOT EXISTS whisper_dislikes (
+                id           SERIAL PRIMARY KEY,
+                user_id      BIGINT NOT NULL,
+                whisper_id   TEXT NOT NULL,
+                disliked_at  TEXT DEFAULT (NOW()),
+                UNIQUE(user_id, whisper_id)
+            );
+
             CREATE TABLE IF NOT EXISTS whisper_archive (
                 whisper_id   TEXT PRIMARY KEY,
                 sender_id    BIGINT NOT NULL,
@@ -637,6 +645,61 @@ def count_saved_whispers(user_id: int) -> int:
         return conn.execute(
             "SELECT COUNT(*) FROM whisper_favorites WHERE user_id=%s", (user_id,)
         ).fetchone()["count"]
+
+
+def count_whisper_likes(whisper_id: str) -> int:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM whisper_favorites WHERE whisper_id=%s", (whisper_id,)
+        ).fetchone()["count"]
+
+
+def has_user_liked(user_id: int, whisper_id: str) -> bool:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM whisper_favorites WHERE user_id=%s AND whisper_id=%s",
+            (user_id, whisper_id),
+        ).fetchone()
+        return row is not None
+
+
+def save_dislike(user_id: int, whisper_id: str) -> bool:
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO whisper_dislikes (user_id, whisper_id) VALUES (%s,%s)"
+                " ON CONFLICT (user_id, whisper_id) DO NOTHING",
+                (user_id, whisper_id),
+            )
+            conn.commit()
+        return True
+    except Exception:
+        return False
+
+
+def remove_dislike(user_id: int, whisper_id: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM whisper_dislikes WHERE user_id=%s AND whisper_id=%s",
+            (user_id, whisper_id),
+        )
+        conn.commit()
+
+
+def count_whisper_dislikes(whisper_id: str) -> int:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM whisper_dislikes WHERE whisper_id=%s", (whisper_id,)
+        ).fetchone()["count"]
+
+
+def has_user_disliked(user_id: int, whisper_id: str) -> bool:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM whisper_dislikes WHERE user_id=%s AND whisper_id=%s",
+            (user_id, whisper_id),
+        ).fetchone()
+        return row is not None
 
 
 def archive_whisper(whisper_id: str) -> bool:
