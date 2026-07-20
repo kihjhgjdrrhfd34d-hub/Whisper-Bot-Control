@@ -173,6 +173,7 @@ def _main_menu_text_and_kb(b, user):
         InlineKeyboardButton("❓ المساعدة",   callback_data="help_menu"),
     )
     kb.add(InlineKeyboardButton("🤫 الهمسات الشخصية", callback_data="pers_menu"))
+    kb.add(InlineKeyboardButton("✉️ ظرف شخصي", callback_data="env_new"))
     if user.id in ADMIN_IDS:
         kb.add(InlineKeyboardButton("🛡 لوحة التحكم", callback_data="admin:main_new"))
     return text, kb
@@ -524,6 +525,11 @@ def handle_messages(msg: telebot.types.Message):
     if handle_personal_send_message(bot, msg, user_states):
         return
 
+    # ── Envelope draft state ──────────────────────────────────────────────
+    from handlers.envelope import handle_envelope_message
+    if handle_envelope_message(bot, msg, user_states):
+        return
+
     action = state.get("action")
 
     # ── Media whisper state (must be before other text-only states) ──────
@@ -710,6 +716,8 @@ def register_all_handlers():
     register_reply_handlers(bot, user_states)
     register_personal_handlers(bot, user_states)
     register_dashboard_handlers(bot, user_states)
+    from handlers.envelope import register_envelope_handlers
+    register_envelope_handlers(bot, user_states)
     register_media_whisper_handlers(bot, user_states)
 
 
