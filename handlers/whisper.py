@@ -65,18 +65,6 @@ def _build_opened_keyboard(whisper_id, readers=None):
                 kb.add(InlineKeyboardButton(f"👤 {name}", callback_data="noop"))
             logger.info("[UI] _build_opened_keyboard names=%s whisper_id=%s wtype=%s",
                         names_added, whisper_id, wtype)
-    try:
-        from enterprise.db_enterprise import count_whisper_likes, count_whisper_dislikes
-        like_count = count_whisper_likes(whisper_id)
-        dislike_count = count_whisper_dislikes(whisper_id)
-    except Exception as exc:
-        logger.warning("[UI] _build_opened_keyboard like/dislike failed for whisper_id=%s: %s", whisper_id, exc)
-        like_count = 0
-        dislike_count = 0
-    kb.add(
-        InlineKeyboardButton(f"❤️ {like_count}", callback_data=f"like:{whisper_id}"),
-        InlineKeyboardButton(f"👎 {dislike_count}", callback_data=f"dislike:{whisper_id}"),
-    )
     return kb
 
 
@@ -154,14 +142,14 @@ def _update_group_keyboard(bot, whisper_id, w, readers, call=None):
         for r in readers:
             name = get_reader_display_name(r)
             kb.add(InlineKeyboardButton(f"👤 {name}", callback_data="noop"))
-        _add_reaction_buttons(kb, whisper_id)
 
-    else:  # first_one, custom
+    elif wtype == "first_one":
         kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
         for r in readers:
             name = get_reader_display_name(r)
             kb.add(InlineKeyboardButton(f"👤 {name}", callback_data="noop"))
-        _add_reaction_buttons(kb, whisper_id)
+    else:  # custom — لا نعرض أسماء القراء ولا أزرار التفاعل
+        kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
 
     inline_msg_id = w.get("group_inline_message_id")
     group_chat_id = w.get("group_chat_id")
