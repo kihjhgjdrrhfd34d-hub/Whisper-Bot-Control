@@ -675,6 +675,24 @@ def _register_callback_handlers(bot, user_states):
                 logger.warning("[NOTIFY] _notify_sender_reader_name failed for whisper_id=%s sender_id=%s: %s",
                                whisper_id, w["sender_id"], exc)
 
+        def _notify_sender_read(w):
+            w_dict = dict(w) if not isinstance(w, dict) else w
+            content = w_dict.get("content") or w_dict.get("caption") or "(بدون محتوى)"
+            username_str = f"@{user.username}" if user.username else "غير متوفر"
+            name = user.first_name or "غير معروف"
+            text = (
+                f"👁 تم مشاهدة همستك من قبل:\n\n"
+                f"👤 معرف الشخص: {username_str}\n"
+                f"📝 اسم الشخص: {name}\n"
+                f"🆔 ايدي الشخص: {user.id}\n\n"
+                f"💌 الهمسة:\n{content}"
+            )
+            try:
+                bot.send_message(w_dict["sender_id"], text)
+            except Exception as exc:
+                logger.warning("[NOTIFY] _notify_sender_read failed for sender_id=%s whisper_id=%s: %s",
+                               w_dict["sender_id"], whisper_id, exc)
+
         def _notify_sender_public_whisper(w: dict, chat_id: int):
             try:
                 bot.send_message(
@@ -758,13 +776,9 @@ def _register_callback_handlers(bot, user_states):
                 _notify_sender_reader_name(w, reader_count_val)
                 logger.debug("[NOTIFY] _notify_sender_reader_name completed whisper_id=%s", whisper_id)
 
-            # everyone notification: simple format, only on first read
+            if w["whisper_type"] in ("everyone", "first_one", "first_three"):
+                _notify_sender_read(w)
             if w["whisper_type"] == "everyone":
-                try:
-                    reader_first_name = user.first_name or "مستخدم"
-                    bot.send_message(w["sender_id"], f"👤 قام {reader_first_name} بقراءة همستك للجميع للتو!")
-                except Exception:
-                    pass
                 return
 
         # first_one and first_three: NO notifications to sender
@@ -985,12 +999,13 @@ def _register_callback_handlers(bot, user_states):
         if not w:
             bot.answer_callback_query(call.id, "❌ الهمسة غير موجودة.", show_alert=True)
             return
-        readers = get_readers(whisper_id)
-        if not any(r["user_id"] == user.id for r in readers):
-            bot.answer_callback_query(
-                call.id, "❌ يجب عليك فتح الهمسة أولاً لتتمكن من الإعجاب.", show_alert=True,
-            )
-            return
+        if w["whisper_type"] != "everyone":
+            readers = get_readers(whisper_id)
+            if not any(r["user_id"] == user.id for r in readers):
+                bot.answer_callback_query(
+                    call.id, "❌ يجب عليك فتح الهمسة أولاً لتتمكن من الإعجاب.", show_alert=True,
+                )
+                return
         try:
             from enterprise.db_enterprise import (
                 save_favorite, remove_dislike, count_whisper_likes, has_user_disliked,
@@ -1029,12 +1044,13 @@ def _register_callback_handlers(bot, user_states):
         if not w:
             bot.answer_callback_query(call.id, "❌ الهمسة غير موجودة.", show_alert=True)
             return
-        readers = get_readers(whisper_id)
-        if not any(r["user_id"] == user.id for r in readers):
-            bot.answer_callback_query(
-                call.id, "❌ يجب عليك فتح الهمسة أولاً لتتمكن من التفاعل.", show_alert=True,
-            )
-            return
+        if w["whisper_type"] != "everyone":
+            readers = get_readers(whisper_id)
+            if not any(r["user_id"] == user.id for r in readers):
+                bot.answer_callback_query(
+                    call.id, "❌ يجب عليك فتح الهمسة أولاً لتتمكن من التفاعل.", show_alert=True,
+                )
+                return
         try:
             from enterprise.db_enterprise import (
                 save_dislike, remove_favorite, count_whisper_dislikes, has_user_liked,
