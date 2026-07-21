@@ -173,7 +173,6 @@ def _main_menu_text_and_kb(b, user):
         InlineKeyboardButton("❓ المساعدة",   callback_data="help_menu"),
     )
     kb.add(InlineKeyboardButton("🤫 الهمسات الشخصية", callback_data="pers_menu"))
-    kb.add(InlineKeyboardButton("✉️ ظرف شخصي", callback_data="env_new"))
     kb.add(InlineKeyboardButton("🎭 همسة مغلفة", callback_data="pkg_start"))
     if user.id in ADMIN_IDS:
         kb.add(InlineKeyboardButton("🛡 لوحة التحكم", callback_data="admin:main_new"))
