@@ -16,7 +16,8 @@ import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from database import (
-    get_setting, set_setting, get_stats, get_group_stats, get_all_users,
+    get_setting, set_setting, get_stats, get_group_stats, get_detailed_stats,
+    get_all_users,
     search_users, ban_user, unban_user, get_user, add_mandatory_channel,
     remove_mandatory_channel, get_mandatory_channels,
 )
@@ -82,6 +83,9 @@ def admin_main_keyboard() -> InlineKeyboardMarkup:
     kb.add(
         InlineKeyboardButton("📊 الإحصائيات",           callback_data="admin:stats"),
         InlineKeyboardButton("📈 إحصائيات المجموعة",    callback_data="admin:group_stats"),
+    )
+    kb.add(
+        InlineKeyboardButton("📊 إحصائيات متقدمة", callback_data="admin:detailed_stats"),
     )
     kb.add(
         InlineKeyboardButton("📢 الإذاعة",         callback_data="admin:broadcast"),
@@ -382,6 +386,42 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
         kb = InlineKeyboardMarkup()
         kb.add(InlineKeyboardButton("🔄 تحديث", callback_data="admin:group_stats"))
         kb.add(InlineKeyboardButton("🔙 رجوع",  callback_data="admin:main"))
+        _safe_edit_text(bot, call, text, kb)
+
+    # ── Detailed statistics ─────────────────────────────────────────────────
+    @bot.callback_query_handler(func=lambda c: c.data == "admin:detailed_stats")
+    def admin_detailed_stats(call: telebot.types.CallbackQuery):
+        _answer(bot, call)
+        if not _guard_admin(bot, call):
+            return
+        s = get_detailed_stats()
+        text = (
+            "📊 *إحصائيات البوت — المتقدمة*\n\n"
+            "👥 *المستخدمون:*\n"
+            f"├ إجمالي: `{s['total_users']}`\n"
+            f"├ جدد اليوم: `{s['new_today']}`\n"
+            f"└ نشطون (7 أيام): `{s['active_users']}`\n\n"
+            "💌 *الهمسات:*\n"
+            f"├ إجمالي: `{s['total_whispers']}`\n"
+            f"├ اليوم: `{s['whispers_today']}`\n"
+            f"├ first_one: `{s['type_first_one']}`\n"
+            f"├ first_three: `{s['type_first_three']}`\n"
+            f"├ everyone: `{s['type_everyone']}`\n"
+            f"└ custom: `{s['type_custom']}`\n\n"
+            "👀 *القراءة:*\n"
+            f"├ إجمالي القراءات: `{s['total_reads']}`\n"
+            f"└ متوسط/همسة: `{s['avg_reads_per_whisper']}`\n\n"
+            "❤️ *التفاعل:*\n"
+            f"├ إعجابات: `{s['total_likes']}`\n"
+            f"├ عدم إعجاب: `{s['total_dislikes']}`\n"
+            f"└ معدل التفاعل: `{s['interaction_rate']}%`\n\n"
+            "🗄️ *النظام:*\n"
+            f"├ نوع DB: `{s['db_type']}`\n"
+            f"└ الحالة: {s['conn_status']}"
+        )
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🔄 تحديث", callback_data="admin:detailed_stats"))
+        kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="admin:main"))
         _safe_edit_text(bot, call, text, kb)
 
     # ── Users list (paginated) ───────────────────────────────────────────────
