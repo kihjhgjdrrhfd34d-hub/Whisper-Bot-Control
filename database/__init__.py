@@ -1003,6 +1003,86 @@ def get_group_stats():
         }
 
 
+def get_detailed_stats():
+    """Extended read-only statistics for the advanced admin dashboard."""
+    with get_conn() as conn:
+        # ── Users ──────────────────────────────────────────────────────────
+        total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        today = datetime.now(timezone.utc).date().isoformat()
+        new_today = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE created_at >= ?", (today,)
+        ).fetchone()[0]
+        week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        try:
+            active_users = conn.execute(
+                "SELECT COUNT(DISTINCT user_id) FROM ("
+                "  SELECT sender_id AS user_id FROM whispers WHERE created_at >= ?"
+                "  UNION"
+                "  SELECT user_id FROM whisper_readers WHERE read_at >= ?"
+                ")",
+                (week_ago, week_ago),
+            ).fetchone()[0]
+        except Exception:
+            active_users = 0
+
+        # ── Whispers ───────────────────────────────────────────────────────
+        total_whispers = conn.execute("SELECT COUNT(*) FROM whispers").fetchone()[0]
+        whispers_today = conn.execute(
+            "SELECT COUNT(*) FROM whispers WHERE created_at >= ?", (today,)
+        ).fetchone()[0]
+        type_rows = conn.execute(
+            "SELECT whisper_type, COUNT(*) as cnt FROM whispers GROUP BY whisper_type"
+        ).fetchall()
+        types = {row["whisper_type"]: row["cnt"] for row in type_rows}
+
+        # ── Reads ──────────────────────────────────────────────────────────
+        total_reads = conn.execute("SELECT COUNT(*) FROM whisper_readers").fetchone()[0]
+        avg_reads = round(total_reads / total_whispers, 2) if total_whispers else 0.0
+
+        # ── Likes / Dislikes (enterprise tables — may not exist) ───────────
+        total_likes = 0
+        total_dislikes = 0
+        try:
+            total_likes = conn.execute(
+                "SELECT COUNT(*) FROM whisper_favorites"
+            ).fetchone()[0]
+        except Exception:
+            pass
+        try:
+            total_dislikes = conn.execute(
+                "SELECT COUNT(*) FROM whisper_dislikes"
+            ).fetchone()[0]
+        except Exception:
+            pass
+        interaction_rate = 0.0
+        denom = total_reads or total_whispers
+        if denom:
+            interaction_rate = round((total_likes + total_dislikes) / denom * 100, 2)
+
+        # ── System ─────────────────────────────────────────────────────────
+        db_type = "PostgreSQL" if USE_POSTGRES else "SQLite"
+        conn_status = "✅ متصل"
+
+        return {
+            "total_users":          total_users,
+            "new_today":            new_today,
+            "active_users":         active_users,
+            "total_whispers":       total_whispers,
+            "whispers_today":       whispers_today,
+            "type_everyone":        types.get("everyone", 0),
+            "type_first_one":       types.get("first_one", 0),
+            "type_first_three":     types.get("first_three", 0),
+            "type_custom":          types.get("custom", 0),
+            "total_reads":          total_reads,
+            "avg_reads_per_whisper": avg_reads,
+            "total_likes":          total_likes,
+            "total_dislikes":       total_dislikes,
+            "interaction_rate":     interaction_rate,
+            "db_type":              db_type,
+            "conn_status":          conn_status,
+        }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Auto-delete scheduler helper
 # ─────────────────────────────────────────────────────────────────────────────
