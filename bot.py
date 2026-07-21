@@ -709,6 +709,10 @@ def handle_messages(msg: telebot.types.Message):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def register_all_handlers():
+    # DEPRECATED: old wrapped_whispers engine (separate read/lock/keyboard system).
+    # Replaced by package_flow → create_whisper() → standard engine.
+    # from handlers.wrapped_whispers import register_wrapped_whisper_handlers
+    # register_wrapped_whisper_handlers(bot)
     register_inline_handlers(bot)
     register_whisper_handlers(bot, user_states)
     register_admin_handlers(bot, user_states)
