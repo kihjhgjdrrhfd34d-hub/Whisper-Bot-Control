@@ -1,5 +1,6 @@
 import logging
 import re
+import traceback
 import telebot
 from telebot.types import (
     InlineQueryResultArticle,
@@ -12,6 +13,11 @@ from database import (
     check_whisper_rate_limit, record_whisper_timestamp, SPAM_BLOCK_MESSAGE,
     get_whisper, get_pending_media_by_id, delete_pending_media_by_id,
     update_whisper_group_message,
+)
+from database.wrapped_whispers import (
+    get_inline_package, delete_inline_package, delete_draft,
+    update_whisper_cover_character,
+    get_cover, get_character,
 )
 from handlers.dashboard import send_dashboard
 from handlers.media_wizard import (
@@ -59,6 +65,89 @@ def _read_button(whisper_id: str, bot_username: str = "") -> InlineKeyboardMarku
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(InlineKeyboardButton("اضغط للرؤية 🔒", callback_data=f"read:{whisper_id}"))
     return kb
+
+
+# ── Wrapped whisper type definitions ─────────────────────────────────────
+# (wtype, max_readers, menu_title, menu_desc)
+WRAPPED_TYPE_OPTIONS = [
+    ("first_one",   1, "☝️ لأول شخص",          "يقرأها أول شخص فقط"),
+    ("everyone",    0, "🌍 للجميع",             "يمكن لأي شخص قراءتها"),
+    ("first_three", 3, "👥 لأول 3 أشخاص",      "يقرأها أول 3 أشخاص فقط"),
+    ("custom",      0, "🎯 مخصصة",             "مخصصة لشخص معين (عدّل الأهداف من لوحة التحكم)"),
+]
+
+WRAPPED_DESTRUCTIVE_OPTIONS = [
+    ("first_one",   1, "💣 تدميرية لأول شخص",          "تًحذف بعد قراءتها"),
+    ("first_three", 3, "💣 تدميرية لأول 3 أشخاص",      "تُحذف بعد ثالث قارئ"),
+    ("everyone",    0, "💣 تدميرية للجميع",            "تظهر كتنبيه ولا تتكرر"),
+]
+
+
+def build_wrapped_inline_results(package, hours):
+    """
+    Build inline results for a wrapped whisper package.
+    Creates placeholder results WITHOUT calling create_whisper().
+    The actual whisper is created in handle_chosen() when user selects a type.
+    Returns list of InlineQueryResultArticle.
+    """
+    results = []
+    cover_code = package.get("cover_code", "")
+    character_code = package.get("character_code", "")
+    content = package.get("content", "")
+
+    cover = get_cover(cover_code) if cover_code else None
+    char = get_character(character_code) if character_code else None
+    cover_icon = cover["icon"] if cover else "📜"
+    cover_name = cover["name"] if cover else "أساسي"
+    char_icon = char["icon"] if char else "🤫"
+    char_name = char["name"] if char else "المُهمس"
+
+    placeholder_text = (
+        f"{char_icon} {char_name}\n\n"
+        f"{cover_icon} {cover_name}\n\n"
+        f"⏳ جاري تجهيز الهمسة..."
+    )
+
+    # Placeholder must include a reply_markup so Telegram sends inline_message_id
+    # in ChosenInlineResult, allowing the bot to edit the message later.
+    placeholder_kb = InlineKeyboardMarkup(row_width=1)
+    placeholder_kb.add(InlineKeyboardButton("⏳ جاري التجهيز...", callback_data="ww_processing"))
+
+    # Normal types
+    for wtype, max_r, title, desc in WRAPPED_TYPE_OPTIONS:
+        try:
+            results.append(
+                InlineQueryResultArticle(
+                    id=f"ww:{wtype}:{package['id']}",
+                    title=title,
+                    description=desc,
+                    input_message_content=InputTextMessageContent(
+                        message_text=placeholder_text,
+                    ),
+                    reply_markup=placeholder_kb,
+                )
+            )
+        except Exception as e:
+            logger.error(f"wrapped inline build [{wtype}]: {e}")
+
+    # Destructive types
+    for wtype, max_r, title, desc in WRAPPED_DESTRUCTIVE_OPTIONS:
+        try:
+            results.append(
+                InlineQueryResultArticle(
+                    id=f"ww:destructive:{wtype}:{package['id']}",
+                    title=title,
+                    description=desc,
+                    input_message_content=InputTextMessageContent(
+                        message_text=placeholder_text,
+                    ),
+                    reply_markup=placeholder_kb,
+                )
+            )
+        except Exception as e:
+            logger.error(f"wrapped destructive inline build [{wtype}]: {e}")
+
+    return results
 
 
 def register_inline_handlers(bot: telebot.TeleBot):
@@ -115,6 +204,41 @@ def register_inline_handlers(bot: telebot.TeleBot):
                         except Exception:
                             pass
                         return
+
+        # ── Wrapped whisper "ww:" prefix — create placeholder results ────
+        if raw.startswith("ww:"):
+            _pkg_id = raw[3:].strip()
+            if _pkg_id:
+                _pkg = get_inline_package(_pkg_id)
+                if _pkg and _pkg["user_id"] == user.id:
+                    hours = _auto_hours()
+                    results = build_wrapped_inline_results(_pkg, hours)
+                    if results:
+                        try:
+                            bot.answer_inline_query(
+                                query.id, results, cache_time=0, is_personal=True,
+                            )
+                        except Exception as e:
+                            logger.error(f"answer_inline_query (ww:): {e}")
+                        return
+                else:
+                    try:
+                        bot.answer_inline_query(
+                            query.id,
+                            [InlineQueryResultArticle(
+                                id="ww:error:expired",
+                                title="❌ الهمسة غير متاحة",
+                                description="انتهت صلاحيتها أو تم استخدامها بالفعل.",
+                                input_message_content=InputTextMessageContent(
+                                    message_text="❌ انتهت صلاحية الهمسة أو تم استخدامها بالفعل."
+                                ),
+                            )],
+                            cache_time=0,
+                            is_personal=True,
+                        )
+                    except Exception as e:
+                        logger.error(f"answer_inline_query (ww: error): {e}")
+                    return
 
         # ── Empty query: show placeholder ─────────────────────────────────
         if not raw:
@@ -339,21 +463,21 @@ def register_inline_handlers(bot: telebot.TeleBot):
     # ── Chosen inline result handler ─────────────────────────────────────────
     @bot.chosen_inline_handler(func=lambda r: True)
     def handle_chosen(result: telebot.types.ChosenInlineResult):
-        """
-        Send the whisper control panel to the sender ONLY for custom whispers.
-        Public / first_one / first_three whispers do NOT get a control panel.
-        """
         user = result.from_user
         result_id = result.result_id
 
         if ":" not in result_id:
             return
 
-        # Skip non-whisper results (e.g. error messages)
         if result_id.startswith("error:"):
             return
 
-        # Detect destructive prefix
+        # ── Wrapped whisper: create whisper now ──────────────────────────
+        if result_id.startswith("ww:"):
+            _handle_wrapped_chosen(bot, result, _auto_hours())
+            return
+
+        # ── Detect destructive prefix ────────────────────────────────────
         if result_id.startswith("destructive:"):
             _, wtype, wid = result_id.split(":", 2)
         else:
@@ -408,3 +532,128 @@ def register_inline_handlers(bot: telebot.TeleBot):
             logger.info(f"Dashboard sent for whisper: {wid}")
         except Exception as e:
             logger.error(f"dashboard DM error: {e}")
+
+
+def _handle_wrapped_chosen(bot, result, hours):
+    """
+    Handle chosen inline result for wrapped whispers.
+    Creates the actual whisper and edits the placeholder message.
+    """
+    user = result.from_user
+    result_id = result.result_id
+
+    # Log inline_message_id existence early for debugging
+    imid = result.inline_message_id
+    if imid:
+        logger.info("[WW] inline_message_id PRESENT: %s", imid)
+    else:
+        logger.warning("[WW] inline_message_id is MISSING (None) — "
+                       "Telegram will not send inline_message_id unless the placeholder "
+                       "InlineQueryResultArticle has a reply_markup attached. "
+                       "Check build_wrapped_inline_results() for reply_markup.")
+
+    # Parse: "ww:{wtype}:{package_id}" or "ww:destructive:{wtype}:{package_id}"
+    parts = result_id.split(":")
+    if len(parts) == 3:
+        # Normal: ww:{wtype}:{package_id}
+        _, wtype, pkg_id = parts
+        is_destructive = False
+    elif len(parts) == 4:
+        # Destructive: ww:destructive:{wtype}:{package_id}
+        _, _, wtype, pkg_id = parts
+        is_destructive = True
+    else:
+        logger.warning("[WW] invalid result_id format: %s", result_id)
+        return
+
+    package = get_inline_package(pkg_id)
+    if not package:
+        logger.warning("[WW] package not found: %s", pkg_id)
+        return
+
+    content = package.get("content", "")
+    cover_code = package.get("cover_code", "")
+    character_code = package.get("character_code", "")
+
+    max_readers_map = {"first_one": 1, "everyone": 0, "first_three": 3, "custom": 0}
+    max_r = max_readers_map.get(wtype, 0)
+
+    try:
+        wid = create_whisper(
+            sender_id=user.id,
+            content=content,
+            whisper_type=wtype,
+            target_users=[],
+            max_readers=max_r,
+            auto_delete_hours=hours,
+            is_destructive=is_destructive,
+        )
+    except Exception as exc:
+        logger.error("[WW] create_whisper failed: %s", exc)
+        return
+
+    if cover_code or character_code:
+        try:
+            update_whisper_cover_character(wid, cover_code, character_code)
+        except Exception as exc:
+            logger.warning("[WW] update_whisper_cover_character failed: %s", exc)
+
+    cover = get_cover(cover_code) if cover_code else None
+    char = get_character(character_code) if character_code else None
+    cover_icon = cover["icon"] if cover else "📜"
+    cover_name = cover["name"] if cover else "أساسي"
+    char_icon = char["icon"] if char else "🤫"
+    char_name = char["name"] if char else "المُهمس"
+
+    final_text = (
+        f"{char_icon} {char_name}\n\n"
+        f"{cover_icon} {cover_name}\n\n"
+        f"🔒 اضغط للرؤية"
+    )
+
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(InlineKeyboardButton("🔒 اضغط للرؤية", callback_data=f"read:{wid}"))
+
+    logger.info("[WW] final_text prepared: wid=%s cover=%s char=%s text='%s'",
+                wid, cover_code, character_code, final_text.replace('\n', ' | '))
+    logger.info("[WW] keyboard contains: callback_data=read:%s", wid)
+
+    imid = result.inline_message_id
+    if imid:
+        logger.info("[WW] editing inline message: inline_message_id=%s wid=%s", imid, wid)
+        try:
+            bot.edit_message_text(
+                final_text,
+                inline_message_id=imid,
+                reply_markup=kb,
+            )
+            logger.info("[WW] edit inline message SUCCEEDED wid=%s — placeholder replaced", wid)
+        except Exception as exc:
+            logger.warning("[WW] edit inline message FAILED wid=%s: %s", wid, exc)
+            traceback.print_exc()
+    else:
+        logger.warning(
+            "[WW] inline_message_id is None — cannot edit placeholder message. "
+            "wid=%s result_id=%s user=%s. "
+            "This means the placeholder message was sent WITHOUT a reply_markup, "
+            "or Telegram did not provide inline_message_id in the ChosenInlineResult.",
+            wid, result_id, user.id,
+        )
+
+    if imid:
+        try:
+            update_whisper_group_message(wid, inline_message_id=imid)
+        except Exception as exc:
+            logger.warning("[WW] store inline_message_id failed: %s", exc)
+
+    try:
+        send_dashboard(bot, user.id, wid)
+    except Exception as exc:
+        logger.warning("[WW] send_dashboard failed: %s", exc)
+
+    delete_inline_package(pkg_id)
+    try:
+        delete_draft(user.id)
+    except Exception:
+        pass
+    logger.info("[WW] whisper created wid=%s wtype=%s destructive=%s pkg=%s", wid, wtype, is_destructive, pkg_id)

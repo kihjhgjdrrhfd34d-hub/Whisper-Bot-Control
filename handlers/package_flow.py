@@ -595,6 +595,7 @@ def _do_finalize(bot, user, chat_id, message_id, user_states):
     target_users = json.loads(pkg.get("target_users", "[]"))
     max_readers = pkg.get("max_readers", 0)
     target_chat = pkg.get("target_chat_id")
+    logger.info("[PACKAGE] finalize user=%s pkg=%s", user.id, pkg)
     target_title = pkg.get("target_chat_title", "")
 
     if not content or not wtype or not target_chat:
