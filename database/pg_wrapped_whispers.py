@@ -26,6 +26,18 @@ def init_wrapped_whispers_db():
 
             CREATE INDEX IF NOT EXISTS idx_ww_drafts_user
                 ON ww_drafts(user_id);
+
+            CREATE TABLE IF NOT EXISTS ww_inline_packages (
+                id              TEXT PRIMARY KEY,
+                user_id         BIGINT NOT NULL,
+                cover_code      TEXT DEFAULT '',
+                character_code  TEXT DEFAULT '',
+                content         TEXT DEFAULT '',
+                created_at      TEXT DEFAULT (NOW())
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_ww_packages_user
+                ON ww_inline_packages(user_id);
         """)
         conn.commit()
     logger.info("Wrapped whispers DB initialised (PG)")
@@ -110,6 +122,33 @@ def update_draft_type(user_id, whisper_type, target_users=None, max_readers=0):
 def delete_draft(user_id):
     with _pg_get_conn() as conn:
         conn.execute("DELETE FROM ww_drafts WHERE user_id=%s", (user_id,))
+        conn.commit()
+
+
+def create_inline_package(user_id, cover_code, character_code, content):
+    import uuid
+    pkg_id = str(uuid.uuid4())[:8].upper()
+    with _pg_get_conn() as conn:
+        conn.execute(
+            "INSERT INTO ww_inline_packages (id, user_id, cover_code, character_code, content) VALUES (%s, %s, %s, %s, %s)",
+            (pkg_id, user_id, cover_code, character_code, content),
+        )
+        conn.commit()
+    return pkg_id
+
+
+def get_inline_package(package_id):
+    with _pg_get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM ww_inline_packages WHERE id=%s",
+            (package_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def delete_inline_package(package_id):
+    with _pg_get_conn() as conn:
+        conn.execute("DELETE FROM ww_inline_packages WHERE id=%s", (package_id,))
         conn.commit()
 
 

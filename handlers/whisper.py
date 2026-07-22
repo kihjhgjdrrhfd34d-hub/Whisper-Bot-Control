@@ -1,4 +1,5 @@
 import logging
+import threading
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from database import (
@@ -31,6 +32,11 @@ logger = logging.getLogger(__name__)
 
 _OPENED_LABEL = "تم قراءة الهمسة 🔒"
 _BEFOREAD_LABEL = "اضغط للرؤية 🔓"
+
+_KEYBOARD_LOCKS: dict[str, threading.Lock] = {}
+
+def _get_keyboard_lock(whisper_id: str) -> threading.Lock:
+    return _KEYBOARD_LOCKS.setdefault(whisper_id, threading.Lock())
 
 
 def _build_opened_keyboard(whisper_id, readers=None):
@@ -120,70 +126,74 @@ def _destroy_whisper_message(call, bot):
             logger.warning("[DESTROY] fallback edit also failed: %s", inner_exc)
 
 
-def _update_group_keyboard(bot, whisper_id, w, readers, call=None):
+def _update_group_keyboard(bot, whisper_id, w, call=None):
     if not isinstance(w, dict):
         w = dict(w)
 
     wtype = w["whisper_type"]
 
-    reader_count_val = len(readers)
-    kb = InlineKeyboardMarkup(row_width=2)
+    lock = _get_keyboard_lock(whisper_id)
+    with lock:
+        readers = get_readers(whisper_id)
+        reader_count_val = len(readers)
 
-    if wtype == "everyone":
-        kb.add(InlineKeyboardButton(_BEFOREAD_LABEL, callback_data=f"read:{whisper_id}"))
-        _add_reaction_buttons(kb, whisper_id)
+        kb = InlineKeyboardMarkup(row_width=2)
 
-    elif wtype == "first_three":
-        actual_count = reader_count(whisper_id)
-        if actual_count >= 3:
-            kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
-        else:
+        if wtype == "everyone":
             kb.add(InlineKeyboardButton(_BEFOREAD_LABEL, callback_data=f"read:{whisper_id}"))
-        for r in readers:
-            name = get_reader_display_name(r)
-            kb.add(InlineKeyboardButton(f"👤 {name}", callback_data="noop"))
+            _add_reaction_buttons(kb, whisper_id)
 
-    elif wtype == "first_one":
-        kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
-        for r in readers:
-            name = get_reader_display_name(r)
-            kb.add(InlineKeyboardButton(f"👤 {name}", callback_data="noop"))
-    else:  # custom — لا نعرض أسماء القراء ولا أزرار التفاعل
-        kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
+        elif wtype == "first_three":
+            actual_count = reader_count(whisper_id)
+            if actual_count >= 3:
+                kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
+            else:
+                kb.add(InlineKeyboardButton(_BEFOREAD_LABEL, callback_data=f"read:{whisper_id}"))
+            for r in readers:
+                name = get_reader_display_name(r)
+                kb.add(InlineKeyboardButton(f"👤 {name}", callback_data="noop"))
 
-    inline_msg_id = w.get("group_inline_message_id")
-    group_chat_id = w.get("group_chat_id")
-    group_msg_id = w.get("group_message_id")
+        elif wtype == "first_one":
+            kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
+            for r in readers:
+                name = get_reader_display_name(r)
+                kb.add(InlineKeyboardButton(f"👤 {name}", callback_data="noop"))
+        else:  # custom — لا نعرض أسماء القراء ولا أزرار التفاعل
+            kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
 
-    try:
-        if call and getattr(call, "inline_message_id", None):
-            bot.edit_message_reply_markup(
-                inline_message_id=call.inline_message_id, reply_markup=kb,
-            )
-        elif call and call.message and call.message.chat.id and call.message.message_id:
-            bot.edit_message_reply_markup(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id, reply_markup=kb,
-            )
-        elif inline_msg_id:
-            bot.edit_message_reply_markup(
-                inline_message_id=inline_msg_id, reply_markup=kb,
-            )
-        elif group_chat_id and group_msg_id:
-            bot.edit_message_reply_markup(
-                chat_id=group_chat_id,
-                message_id=group_msg_id, reply_markup=kb,
-            )
-        else:
-            logger.warning(
-                "[UI] SKIPPING keyboard update — no valid coords available! whisper_id=%s",
-                whisper_id,
-            )
-    except Exception as e:
-        logger.warning("[UI] _update_group_keyboard FAILED for whisper_id=%s: %s",
-                       whisper_id, e)
+        inline_msg_id = w.get("group_inline_message_id")
+        group_chat_id = w.get("group_chat_id")
+        group_msg_id = w.get("group_message_id")
 
-    return reader_count_val
+        try:
+            if call and getattr(call, "inline_message_id", None):
+                bot.edit_message_reply_markup(
+                    inline_message_id=call.inline_message_id, reply_markup=kb,
+                )
+            elif call and call.message and call.message.chat.id and call.message.message_id:
+                bot.edit_message_reply_markup(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id, reply_markup=kb,
+                )
+            elif inline_msg_id:
+                bot.edit_message_reply_markup(
+                    inline_message_id=inline_msg_id, reply_markup=kb,
+                )
+            elif group_chat_id and group_msg_id:
+                bot.edit_message_reply_markup(
+                    chat_id=group_chat_id,
+                    message_id=group_msg_id, reply_markup=kb,
+                )
+            else:
+                logger.warning(
+                    "[UI] SKIPPING keyboard update — no valid coords available! whisper_id=%s",
+                    whisper_id,
+                )
+        except Exception as e:
+            logger.warning("[UI] _update_group_keyboard FAILED for whisper_id=%s: %s",
+                           whisper_id, e)
+
+        return reader_count_val
 
 
 def _add_reaction_buttons(kb, whisper_id):
@@ -766,7 +776,7 @@ def _register_callback_handlers(bot, user_states):
                         len(readers), [r.get("first_name", r.get("user_id")) for r in readers], whisper_id)
             reader_count_val = len(readers)
 
-            _update_group_keyboard(bot, whisper_id, w, readers, call=call)
+            _update_group_keyboard(bot, whisper_id, w, call=call)
 
             _send_reply_invitation(whisper_id)
             _maybe_self_destruct(whisper_id, w, is_destructive, is_new_read, reader_count_val)

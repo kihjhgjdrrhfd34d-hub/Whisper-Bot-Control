@@ -351,9 +351,8 @@ def start_cmd(msg: telebot.types.Message):
         # ── Update group keyboard after read (single source of truth) ──
         if is_new_read:
             try:
-                all_readers = get_readers(whisper_id_payload)
                 from handlers.whisper import _update_group_keyboard
-                _update_group_keyboard(bot, whisper_id_payload, w_dict, all_readers)
+                _update_group_keyboard(bot, whisper_id_payload, w_dict)
             except Exception:
                 pass
 
