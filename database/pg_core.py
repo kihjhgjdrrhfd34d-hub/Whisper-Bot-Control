@@ -199,6 +199,8 @@ def _run_migrations():
                 ("group_chat_id", "BIGINT"),
                 ("group_message_id", "INTEGER"),
                 ("group_inline_message_id", "TEXT"),
+                ("cover_code", "TEXT DEFAULT ''"),
+                ("character_code", "TEXT DEFAULT ''"),
             ]:
                 if col_name not in cols:
                     conn.execute(
