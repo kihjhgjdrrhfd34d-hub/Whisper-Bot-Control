@@ -82,15 +82,13 @@ def main() -> None:
     except Exception as exc:
         logger.error(f"خطأ في تهيئة جداول الهمسة المغلفة: {exc}", exc_info=True)
 
-    # ── 3f. Wrapped whispers DB init (DEPRECATED) ────────────────────────
-    # Old engine replaced by package_flow → create_whisper() → standard engine.
-    # Tables wrapped_whispers + wrapped_whisper_readers no longer created.
-    # logger.info("🎁 تهيئة جداول الهمسات المغلفة (Wrapped Whispers)...")
-    # try:
-    #     from database.wrapped_whispers import init_wrapped_whispers_db
-    #     init_wrapped_whispers_db()
-    # except Exception as exc:
-    #     logger.error(f"خطأ في تهيئة جداول الهمسات المغلفة: {exc}", exc_info=True)
+    # ── 3f. Wrapped whispers DB init ─────────────────────────────────────
+    logger.info("🎭 تهيئة جداول الهمسة المغلفة الجديدة...")
+    try:
+        from database.wrapped_whispers import init_wrapped_whispers_db
+        init_wrapped_whispers_db()
+    except Exception as exc:
+        logger.error(f"خطأ في تهيئة جداول الهمسة المغلفة: {exc}", exc_info=True)
 
     # ── 4. Keep-alive HTTP server ─────────────────────────────────────────────
     logger.info("🌐 تشغيل خادم Keep-Alive (port 8080)...")

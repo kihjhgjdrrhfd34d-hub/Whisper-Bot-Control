@@ -1,0 +1,22 @@
+[
+  {"code": "whisperer", "name": "المهمس", "icon": "🤫", "greeting": "", "min_xp": 0},
+  {"code": "poet", "name": "الشاعر", "icon": "🖋", "greeting": "", "min_xp": 0},
+  {"code": "friend", "name": "الصديق", "icon": "🤝", "greeting": "", "min_xp": 0},
+  {"code": "wise", "name": "الحكيم", "icon": "💡", "greeting": "", "min_xp": 0},
+  {"code": "mysterious", "name": "الغامض", "icon": "🌑", "greeting": "", "min_xp": 0},
+  {"code": "funny", "name": "المرح", "icon": "😂", "greeting": "", "min_xp": 0},
+  {"code": "emotional", "name": "العاطفي", "icon": "❤️", "greeting": "", "min_xp": 0},
+  {"code": "announcer", "name": "المعلن", "icon": "📣", "greeting": "", "min_xp": 0},
+  {"code": "adventurer", "name": "المغامر", "icon": "🚀", "greeting": "", "min_xp": 50},
+  {"code": "sorcerer", "name": "الساحر", "icon": "🧙", "greeting": "", "min_xp": 50},
+  {"code": "royal", "name": "الملكي", "icon": "👑", "greeting": "", "min_xp": 50},
+  {"code": "gentle", "name": "اللطيف", "icon": "🌸", "greeting": "", "min_xp": 0},
+  {"code": "passionate", "name": "الحماسي", "icon": "🔥", "greeting": "", "min_xp": 0},
+  {"code": "artist", "name": "الفنان", "icon": "🎭", "greeting": "", "min_xp": 0},
+  {"code": "intellectual", "name": "المثقف", "icon": "📚", "greeting": "", "min_xp": 0},
+  {"code": "peacemaker", "name": "السلام", "icon": "🕊", "greeting": "", "min_xp": 0},
+  {"code": "optimist", "name": "المتفائل", "icon": "⭐", "greeting": "", "min_xp": 0},
+  {"code": "concise", "name": "المختصر", "icon": "🎯", "greeting": "", "min_xp": 0},
+  {"code": "dreamer", "name": "الحالم", "icon": "🌙", "greeting": "", "min_xp": 0},
+  {"code": "special", "name": "المميز", "icon": "💎", "greeting": "", "min_xp": 100}
+]

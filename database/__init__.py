@@ -258,6 +258,31 @@ def _run_migrations():
             if "group_inline_message_id" not in cols:
                 conn.execute("ALTER TABLE whispers ADD COLUMN group_inline_message_id TEXT")
 
+        # Migration 11: add cover_code and character_code columns to whispers for wrapped whispers
+        if "whispers" in tables:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(whispers)").fetchall()]
+            if "cover_code" not in cols:
+                conn.execute("ALTER TABLE whispers ADD COLUMN cover_code TEXT DEFAULT ''")
+            if "character_code" not in cols:
+                conn.execute("ALTER TABLE whispers ADD COLUMN character_code TEXT DEFAULT ''")
+
+        # Migration 12: ww_inline_packages table for inline wrapped whispers
+        if "ww_inline_packages" not in existing_tables:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS ww_inline_packages (
+                    id              TEXT PRIMARY KEY,
+                    user_id         INTEGER NOT NULL,
+                    cover_code      TEXT DEFAULT '',
+                    character_code  TEXT DEFAULT '',
+                    content         TEXT DEFAULT '',
+                    created_at      TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_ww_packages_user
+                    ON ww_inline_packages(user_id)
+            """)
+
         # Migration 9: add spam-limit columns to group_settings if missing
         if "group_settings" in tables:
             gs_cols = [r[1] for r in conn.execute("PRAGMA table_info(group_settings)").fetchall()]

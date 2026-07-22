@@ -173,7 +173,7 @@ def _main_menu_text_and_kb(b, user):
         InlineKeyboardButton("❓ المساعدة",   callback_data="help_menu"),
     )
     kb.add(InlineKeyboardButton("🤫 الهمسات الشخصية", callback_data="pers_menu"))
-    kb.add(InlineKeyboardButton("🎭 همسة مغلفة", callback_data="pkg_start"))
+    kb.add(InlineKeyboardButton("🎭 همسة مغلفة", callback_data="ww_start"))
     if user.id in ADMIN_IDS:
         kb.add(InlineKeyboardButton("🛡 لوحة التحكم", callback_data="admin:main_new"))
     return text, kb
@@ -501,7 +501,13 @@ def check_membership_cb(call: telebot.types.CallbackQuery):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @bot.message_handler(
-    func=lambda m: user_states.get(m.from_user.id) is not None,
+    func=lambda m: (
+        user_states.get(m.from_user.id) is not None
+        and not any(
+            k.startswith("ww_")
+            for k in user_states.get(m.from_user.id, {})
+        )
+    ),
     content_types=["text", "photo", "video", "document", "voice", "audio", "sticker",
                    "animation", "contact", "location"],
 )
@@ -722,8 +728,8 @@ def register_all_handlers():
     register_dashboard_handlers(bot, user_states)
     from handlers.envelope import register_envelope_handlers
     register_envelope_handlers(bot, user_states)
-    from handlers.package_flow import register_package_flow_handlers
-    register_package_flow_handlers(bot, user_states)
+    from handlers.wrapped_whispers import register_wrapped_whisper_handlers
+    register_wrapped_whisper_handlers(bot, user_states)
     register_media_whisper_handlers(bot, user_states)
 
 
