@@ -8,7 +8,7 @@ from database import (
     update_whisper_content, set_setting, add_mandatory_channel,
     search_users, ban_user, unban_user,
     is_new_user, mark_user_started, get_stats, get_whisper,
-    create_whisper,
+    create_whisper, set_blocked, is_blocked, clear_blocked,
 )
 from handlers.inline import register_inline_handlers
 from handlers.whisper import register_whisper_handlers
@@ -211,13 +211,15 @@ def start_cmd(msg: telebot.types.Message):
     # Register / update user in DB
     upsert_user(user.id, user.username, user.first_name, user.last_name)
 
-    # ── Notify admins ONLY on the very first /start ───────────────────────
+    # ── Notify admins only on meaningful events ─────────────────────────
     if is_new_user(user.id):
         mark_user_started(user.id)
         _notify_admins_new_user(user)
         _enterprise_on_new_user(user.id)
     else:
-        _notify_admins_returning_user(user)
+        if is_blocked(user.id):
+            _notify_admins_returning_user(user)
+            clear_blocked(user.id)
         _enterprise_on_every_start(user.id)
 
     # ── Extract payload from deep link (e.g. /start <whisper_id>) ────────
@@ -426,12 +428,12 @@ def handle_chat_member_update(update: telebot.types.ChatMemberUpdated):
     # blocked: was member/active/left → now kicked
     if new_status == "kicked" and old_status in ("member", "creator", "administrator", "left"):
         upsert_user(user.id, user.username, user.first_name, user.last_name)
+        set_blocked(user.id)
         _notify_admins_block(user)
 
-    # unblocked: was kicked → now member
+    # unblocked: was kicked → now member (no notification — handled on /start)
     elif old_status == "kicked" and new_status == "member":
         upsert_user(user.id, user.username, user.first_name, user.last_name)
-        _notify_admins_unblock(user)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

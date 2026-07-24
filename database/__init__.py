@@ -266,6 +266,12 @@ def _run_migrations():
             if "character_code" not in cols:
                 conn.execute("ALTER TABLE whispers ADD COLUMN character_code TEXT DEFAULT ''")
 
+        # Migration 13: add is_blocked column to users (bot-block tracking)
+        if "users" in tables:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+            if "is_blocked" not in cols:
+                conn.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER DEFAULT 0")
+
         # Migration 12: ww_inline_packages table for inline wrapped whispers
         if "ww_inline_packages" not in existing_tables:
             conn.execute("""
@@ -363,6 +369,33 @@ def mark_user_started(user_id):
     with get_conn() as conn:
         conn.execute(
             "UPDATE users SET started=1 WHERE user_id=?", (user_id,)
+        )
+        conn.commit()
+
+
+def set_blocked(user_id):
+    """Mark that the user has blocked the bot."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET is_blocked=1 WHERE user_id=?", (user_id,)
+        )
+        conn.commit()
+
+
+def is_blocked(user_id):
+    """Return True if the user has blocked the bot and hasn't returned yet."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT is_blocked FROM users WHERE user_id=?", (user_id,)
+        ).fetchone()
+        return bool(row and row["is_blocked"] == 1)
+
+
+def clear_blocked(user_id):
+    """Clear the bot-block flag (user has returned via /start)."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET is_blocked=0 WHERE user_id=?", (user_id,)
         )
         conn.commit()
 

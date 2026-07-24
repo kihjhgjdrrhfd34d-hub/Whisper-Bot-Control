@@ -229,6 +229,14 @@ def _run_migrations():
                         f"ALTER TABLE group_settings ADD COLUMN {col_name} {col_type}"
                     )
 
+        if "users" in tables:
+            cols = {r["column_name"] for r in conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='users' AND table_schema='public'"
+            ).fetchall()}
+            if "is_blocked" not in cols:
+                conn.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER DEFAULT 0")
+
         conn.commit()
 
 
@@ -266,6 +274,30 @@ def mark_user_started(user_id):
     with get_conn() as conn:
         conn.execute(
             "UPDATE users SET started=1 WHERE user_id=%s", (user_id,)
+        )
+        conn.commit()
+
+
+def set_blocked(user_id):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET is_blocked=1 WHERE user_id=%s", (user_id,)
+        )
+        conn.commit()
+
+
+def is_blocked(user_id):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT is_blocked FROM users WHERE user_id=%s", (user_id,)
+        ).fetchone()
+        return bool(row and row["is_blocked"] == 1)
+
+
+def clear_blocked(user_id):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET is_blocked=0 WHERE user_id=%s", (user_id,)
         )
         conn.commit()
 
