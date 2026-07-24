@@ -15,6 +15,7 @@ from telebot.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
+from handlers.keyboard_utils import back_button
 from database import (
     delete_whisper,
     get_whisper,
@@ -43,7 +44,7 @@ def mw_reply_button(whisper_id: str, bot_username: str = "") -> InlineKeyboardBu
 def media_whisper_read_keyboard(whisper_id: str, bot_username: str = "") -> InlineKeyboardMarkup:
     """Build keyboard shown when a media whisper is delivered in private."""
     from database.replies import count_replies
-    kb = InlineKeyboardMarkup(row_width=1)
+    kb = InlineKeyboardMarkup(row_width=2)
     kb.add(mw_reply_button(whisper_id, bot_username))
     if count_replies(whisper_id) > 0:
         from handlers.replies import conversation_button

@@ -2,6 +2,7 @@ import logging
 import threading
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from handlers.keyboard_utils import confirm_button, cancel_button
 from database import (
     get_whisper, can_read_whisper, add_reader_if_new,
     add_curious,
@@ -855,10 +856,8 @@ def _register_callback_handlers(bot, user_states):
             return
         kb = InlineKeyboardMarkup(row_width=2)
         kb.add(
-            InlineKeyboardButton(
-                "✅ نعم، احذف", callback_data=f"confirm_delete:{whisper_id}"
-            ),
-            InlineKeyboardButton("❌ إلغاء", callback_data="cancel_action"),
+            confirm_button("نعم، احذف", f"confirm_delete:{whisper_id}"),
+            cancel_button("cancel_action"),
         )
         bot.answer_callback_query(call.id)
         try:
@@ -943,7 +942,7 @@ def _register_callback_handlers(bot, user_states):
         bot.answer_callback_query(call.id)
         try:
             kb = InlineKeyboardMarkup()
-            kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="cancel_action"))
+            kb.add(cancel_button("cancel_action"))
             bot.send_message(
                 user.id,
                 f"✏️ *تعديل الهمسة*\n\nالنص الحالي:\n_{w['content']}_\n\nأرسل النص الجديد:",

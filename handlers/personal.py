@@ -1,6 +1,7 @@
 import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from handlers.keyboard_utils import back_button, cancel_button
 from database import upsert_user
 from database.personal import (
     create_personal_whisper, get_personal_whisper,
@@ -47,7 +48,7 @@ def register_personal_handlers(bot: telebot.TeleBot, user_states: dict):
         bot.answer_callback_query(call.id)
         user_states[user.id] = {"action": "pers_awaiting_target"}
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="pers_cancel"))
+        kb.add(cancel_button("pers_cancel"))
         bot.send_message(
             call.message.chat.id,
             "📝 *إرسال همسة شخصية*\n\n"
@@ -122,7 +123,7 @@ def handle_personal_send_message(bot: telebot.TeleBot, msg: telebot.types.Messag
             return True
         user_states[user.id] = {"action": "pers_awaiting_message", "target_id": target_id}
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="pers_cancel"))
+        kb.add(cancel_button("pers_cancel"))
         bot.send_message(
             msg.chat.id,
             f"✅ تم تحديد المستخدم `{target_id}`.\n\nالآن أرسل نص الهمسة:",
@@ -219,13 +220,13 @@ def _show_personal_menu(bot, chat_id, user, edit_msg_id=None):
         f"يمكنك إرسال همسة خاصة لشخص معين، ولن يراها أحد غيره.\n\n"
         f"📊 همسات غير مقروءة: `{unread}`{unread_badge}"
     )
-    kb = InlineKeyboardMarkup(row_width=1)
+    kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("📩 صندوق الوارد", callback_data="pers_inbox:0"),
         InlineKeyboardButton("📤 الهمسات المُرسلة", callback_data="pers_sent:0"),
-        InlineKeyboardButton("✉️ إرسال همسة شخصية", callback_data="pers_new:"),
     )
-    kb.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="back_to_main"))
+    kb.add(InlineKeyboardButton("✉️ إرسال همسة شخصية", callback_data="pers_new:"))
+    kb.add(back_button("back_to_main"))
     if edit_msg_id:
         try:
             bot.edit_message_text(text, chat_id, edit_msg_id, parse_mode="Markdown", reply_markup=kb)
@@ -244,7 +245,7 @@ def _show_inbox(bot, message, user_id, offset=0):
                 message.chat.id, message.message_id,
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup().add(
-                    InlineKeyboardButton("🔙 رجوع", callback_data="pers_back")),
+                    back_button("pers_back")),
             )
         except Exception:
             bot.send_message(message.chat.id, "📭 *صندوق الوارد*\n\nلا توجد همسات شخصية.",
@@ -264,7 +265,7 @@ def _show_inbox(bot, message, user_id, offset=0):
         nav.append(InlineKeyboardButton("▶️", callback_data=f"pers_inbox:{offset + 5}"))
     if nav:
         kb.row(*nav)
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="pers_back"))
+    kb.add(back_button("pers_back"))
     try:
         bot.edit_message_text(
             f"📩 *صندوق الوارد* (إجمالي: {total})",
@@ -287,7 +288,7 @@ def _show_sent(bot, message, user_id, offset=0):
                 message.chat.id, message.message_id,
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup().add(
-                    InlineKeyboardButton("🔙 رجوع", callback_data="pers_back")),
+                    back_button("pers_back")),
             )
         except Exception:
             bot.send_message(message.chat.id, "📤 *الهمسات المُرسلة*\n\nلم ترسل أي همسات شخصية بعد.",
@@ -307,7 +308,7 @@ def _show_sent(bot, message, user_id, offset=0):
         nav.append(InlineKeyboardButton("▶️", callback_data=f"pers_sent:{offset + 5}"))
     if nav:
         kb.row(*nav)
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="pers_back"))
+    kb.add(back_button("pers_back"))
     text = f"📤 *الهمسات المُرسلة* (إجمالي: {total})\n\n" + "\n".join(lines)
     try:
         bot.edit_message_text(

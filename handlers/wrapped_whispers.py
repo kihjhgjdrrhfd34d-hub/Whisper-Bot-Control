@@ -13,6 +13,7 @@ from database.wrapped_whispers import (
     get_available_characters, get_character,
     create_inline_package, delete_inline_package,
 )
+from handlers.keyboard_utils import back_button, page_indicator
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +54,9 @@ def _edit(bot, chat_id, msg_id, text, kb=None):
 
 
 def _build_start_kb():
-    kb = InlineKeyboardMarkup(row_width=1)
+    kb = InlineKeyboardMarkup(row_width=2)
     kb.add(InlineKeyboardButton("✨ إنشاء همسة", callback_data="ww_create"))
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main"))
+    kb.add(back_button("back_to_main"))
     return kb
 
 
@@ -63,6 +64,7 @@ def _build_cover_kb(user_id, page=0):
     xp = _get_user_xp(user_id)
     covers = get_available_covers(xp)
     total = len(covers)
+    total_pages = max(1, (total + _ITEMS_PER_PAGE - 1) // _ITEMS_PER_PAGE)
     start = page * _ITEMS_PER_PAGE
     end = min(start + _ITEMS_PER_PAGE, total)
     page_covers = covers[start:end]
@@ -72,15 +74,16 @@ def _build_cover_kb(user_id, page=0):
         row = page_covers[i:i+2]
         kb.add(*[InlineKeyboardButton(f"{c['icon']} {c['name']}", callback_data=f"ww_cover:{c['code']}") for c in row])
 
-    pagination = []
-    if page > 0:
-        pagination.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"ww_cover_page:{page-1}"))
-    if end < total:
-        pagination.append(InlineKeyboardButton("➡️ التالي", callback_data=f"ww_cover_page:{page+1}"))
-    if pagination:
+    if total_pages > 1:
+        pagination = []
+        if page > 0:
+            pagination.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"ww_cover_page:{page-1}"))
+        pagination.append(page_indicator(page + 1, total_pages))
+        if end < total:
+            pagination.append(InlineKeyboardButton("➡️ التالي", callback_data=f"ww_cover_page:{page+1}"))
         kb.add(*pagination)
 
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="ww_back_start"))
+    kb.add(back_button("ww_back_start"))
     return kb, total
 
 
@@ -88,6 +91,7 @@ def _build_character_kb(user_id, page=0):
     xp = _get_user_xp(user_id)
     chars = get_available_characters(xp)
     total = len(chars)
+    total_pages = max(1, (total + _ITEMS_PER_PAGE - 1) // _ITEMS_PER_PAGE)
     start = page * _ITEMS_PER_PAGE
     end = min(start + _ITEMS_PER_PAGE, total)
     page_chars = chars[start:end]
@@ -97,21 +101,22 @@ def _build_character_kb(user_id, page=0):
         row = page_chars[i:i+2]
         kb.add(*[InlineKeyboardButton(f"{ch['icon']} {ch['name']}", callback_data=f"ww_char:{ch['code']}") for ch in row])
 
-    pagination = []
-    if page > 0:
-        pagination.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"ww_char_page:{page-1}"))
-    if end < total:
-        pagination.append(InlineKeyboardButton("➡️ التالي", callback_data=f"ww_char_page:{page+1}"))
-    if pagination:
+    if total_pages > 1:
+        pagination = []
+        if page > 0:
+            pagination.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"ww_char_page:{page-1}"))
+        pagination.append(page_indicator(page + 1, total_pages))
+        if end < total:
+            pagination.append(InlineKeyboardButton("➡️ التالي", callback_data=f"ww_char_page:{page+1}"))
         kb.add(*pagination)
 
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="ww_back_cover"))
+    kb.add(back_button("ww_back_cover"))
     return kb, total
 
 
 def _build_text_input_kb():
-    kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="ww_back_char"))
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(back_button("ww_back_char"))
     return kb
 
 
@@ -121,12 +126,12 @@ def _build_preview_kb():
     kb.add(InlineKeyboardButton("✏️ تعديل النص", callback_data="ww_edit_text"))
     kb.add(InlineKeyboardButton("📦 تغيير الغلاف", callback_data="ww_change_cover"))
     kb.add(InlineKeyboardButton("🎭 تغيير الشخصية", callback_data="ww_change_char"))
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="ww_back_to_text"))
+    kb.add(back_button("ww_back_to_text"))
     return kb
 
 
 def _build_share_kb(package_id):
-    kb = InlineKeyboardMarkup(row_width=1)
+    kb = InlineKeyboardMarkup(row_width=2)
     kb.add(InlineKeyboardButton("📤 مشاركة الهمسة", switch_inline_query=f"ww:{package_id}"))
     kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="ww_cancel"))
     return kb

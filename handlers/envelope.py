@@ -1,6 +1,7 @@
 import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from handlers.keyboard_utils import back_button, cancel_button
 from database import upsert_user, create_whisper, get_setting
 from database.envelope import create_draft, get_draft, delete_draft
 
@@ -29,7 +30,7 @@ def _type_kb():
     kb.add(
         InlineKeyboardButton("👥 لأول 3 أشخاص", callback_data="env_send:first_three"),
     )
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="env_back"))
+    kb.add(back_button("env_back"))
     return kb
 
 
@@ -46,7 +47,7 @@ def register_envelope_handlers(bot: telebot.TeleBot, user_states: dict):
         bot.answer_callback_query(call.id)
         user_states[user.id] = {"action": "env_awaiting_content"}
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="env_delete"))
+        kb.add(cancel_button("env_delete"))
         bot.send_message(
             call.message.chat.id,
             "✉️ *الظرف الشخصي*\n\n"
@@ -147,7 +148,7 @@ def register_envelope_handlers(bot: telebot.TeleBot, user_states: dict):
         user = call.from_user
         user_states[user.id] = {"action": "env_awaiting_content"}
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="env_delete"))
+        kb.add(cancel_button("env_delete"))
         bot.send_message(
             call.message.chat.id,
             "✏️ أرسل النص الجديد للظرف:",

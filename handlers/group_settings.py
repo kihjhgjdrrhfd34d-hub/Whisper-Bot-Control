@@ -1,6 +1,7 @@
 import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from handlers.keyboard_utils import back_button
 from database import get_group_settings, update_group_setting
 from handlers.admin import _answer, _guard_admin
 
@@ -42,7 +43,10 @@ def _build_settings_text(chat_id: int) -> str:
 
 def _settings_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     settings = get_group_settings(chat_id)
-    kb = InlineKeyboardMarkup(row_width=3)
+    kb = InlineKeyboardMarkup(row_width=2)
+
+    # 💬 إعدادات الهمسات
+    kb.add(InlineKeyboardButton("💬 إعدادات الهمسات", callback_data="noop"))
     for key in _TOGGLE_KEYS:
         val = settings.get(key, 1)
         icon = "🟢" if val else "🔴"
@@ -50,67 +54,49 @@ def _settings_keyboard(chat_id: int) -> InlineKeyboardMarkup:
             f"{icon} {_SETTING_LABELS[key]}",
             callback_data=f"group_toggle:{key}",
         ))
+
+    # 🕒 الحذف التلقائي
     auto_val = settings.get("auto_delete_minutes", 0)
+    kb.add(InlineKeyboardButton("🕒 الحذف التلقائي", callback_data="noop"))
     if auto_val and auto_val > 0:
         kb.add(InlineKeyboardButton(
-            f"🕒 الحذف التلقائي: {auto_val} دقيقة",
-            callback_data="noop",
+            f"المدة الحالية: {auto_val} دقيقة", callback_data="noop",
         ))
     else:
         kb.add(InlineKeyboardButton(
-            "🕒 الحذف التلقائي: معطل",
-            callback_data="noop",
+            "المدة الحالية: معطل", callback_data="noop",
         ))
     presets = _AUTO_DELETE_PRESETS
-    kb.add(
+    auto_buttons = [
         InlineKeyboardButton(
-            f"{'✅ ' if auto_val == presets[0] else ''}{presets[0]} دقيقة",
-            callback_data=f"group_autodel_set:{presets[0]}",
-        ),
-        InlineKeyboardButton(
-            f"{'✅ ' if auto_val == presets[1] else ''}{presets[1]} دقيقة",
-            callback_data=f"group_autodel_set:{presets[1]}",
-        ),
-        InlineKeyboardButton(
-            f"{'✅ ' if auto_val == presets[2] else ''}{presets[2]} دقائق",
-            callback_data=f"group_autodel_set:{presets[2]}",
-        ),
-    )
-    kb.add(
-        InlineKeyboardButton(
-            f"{'✅ ' if auto_val == presets[3] else ''}{presets[3]} دقائق",
-            callback_data=f"group_autodel_set:{presets[3]}",
-        ),
-        InlineKeyboardButton(
-            f"{'✅ ' if auto_val == presets[4] else ''}{presets[4]} دقيقة",
-            callback_data=f"group_autodel_set:{presets[4]}",
-        ),
-        InlineKeyboardButton(
-            f"{'✅ ' if auto_val == presets[5] else ''}{presets[5]} دقيقة",
-            callback_data=f"group_autodel_set:{presets[5]}",
-        ),
-    )
-    # ── Anti-spam section ────────────────────────────────────────────────
+            f"{'✅ ' if auto_val == p else ''}{p} {'دقائق' if p in (5, 10) else 'دقيقة'}",
+            callback_data=f"group_autodel_set:{p}",
+        ) for p in presets
+    ]
+    for i in range(0, len(auto_buttons), 2):
+        kb.add(*auto_buttons[i:i + 2])
+
+    # 🛡️ حماية Spam
     spam_enabled = settings.get("spam_limit_enabled", 1)
     spam_icon = "🟢" if spam_enabled else "🔴"
+    kb.add(InlineKeyboardButton("🛡️ حماية Spam", callback_data="noop"))
     kb.add(InlineKeyboardButton(
         f"{spam_icon} {_SETTING_LABELS['spam_limit_enabled']}",
         callback_data="group_toggle:spam_limit_enabled",
     ))
     spam_count = settings.get("spam_limit_count", 5)
     kb.add(InlineKeyboardButton(
-        f"🚫 عدد الهمسات: {spam_count}",
-        callback_data="noop",
+        f"🚫 عدد الهمسات: {spam_count}", callback_data="noop",
     ))
-    spam_preset_row = []
+    spam_presets = []
     for preset in _SPAM_COUNT_PRESETS:
         label = f"{'✅ ' if spam_count == preset else ''}{preset}"
-        spam_preset_row.append(InlineKeyboardButton(
-            label,
-            callback_data=f"group_spam_set:{preset}",
+        spam_presets.append(InlineKeyboardButton(
+            label, callback_data=f"group_spam_set:{preset}",
         ))
-    kb.add(*spam_preset_row)
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="admin:main"))
+    kb.row(*spam_presets)
+
+    kb.add(back_button("admin:main"))
     return kb
 
 
