@@ -2,6 +2,7 @@ import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import BOT_TOKEN, ADMIN_IDS
+from handlers.keyboard_utils import back_button, cancel_button
 from database import (
     upsert_user, get_setting, is_banned, get_mandatory_channels,
     update_whisper_content, set_setting, add_mandatory_channel,
@@ -130,9 +131,9 @@ def _send_help(b, chat_id):
         "/stats — إحصائياتك الشخصية\n"
         "/help — هذه الصفحة"
     )
-    kb = InlineKeyboardMarkup(row_width=1)
+    kb = InlineKeyboardMarkup(row_width=2)
     kb.add(InlineKeyboardButton("🤫 أرسل همسة", switch_inline_query=" "))
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main"))
+    kb.add(back_button("back_to_main"))
     b.send_message(chat_id, text, parse_mode="Markdown", reply_markup=kb)
 
 
@@ -172,8 +173,10 @@ def _main_menu_text_and_kb(b, user):
         InlineKeyboardButton("📊 إحصائياتي", callback_data="my_stats"),
         InlineKeyboardButton("❓ المساعدة",   callback_data="help_menu"),
     )
-    kb.add(InlineKeyboardButton("🤫 الهمسات الشخصية", callback_data="pers_menu"))
-    kb.add(InlineKeyboardButton("🎭 همسة مغلفة", callback_data="ww_start"))
+    kb.add(
+        InlineKeyboardButton("🤫 الهمسات الشخصية", callback_data="pers_menu"),
+        InlineKeyboardButton("🎭 همسة مغلفة", callback_data="ww_start"),
+    )
     if user.id in ADMIN_IDS:
         kb.add(InlineKeyboardButton("🛡 لوحة التحكم", callback_data="admin:main_new"))
     return text, kb

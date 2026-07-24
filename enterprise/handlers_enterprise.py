@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from handlers.keyboard_utils import back_button, cancel_button
 
 from handlers._formatting import _fmt_username
 
@@ -98,8 +99,8 @@ def register_enterprise_handlers(bot: telebot.TeleBot, user_states: dict) -> Non
             medal = medals[i] if i < 3 else f"{i+1}."
             uname = _fmt_username(r["username"]) if r.get("username") else r.get("first_name") or "مجهول"
             lines.append(f"{medal} {uname} — `{r['xp']}` XP  ({r['rank_title']})")
-        kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="ent:close"))
+        kb = InlineKeyboardMarkup(row_width=1)
+        kb.add(back_button("ent:close"))
         bot.send_message(
             call.message.chat.id, "\n".join(lines),
             parse_mode="Markdown", reply_markup=kb,
@@ -268,9 +269,11 @@ def register_enterprise_handlers(bot: telebot.TeleBot, user_states: dict) -> Non
                 f"• `{b['filename']}`\n"
                 f"  📏 {size_kb} KB  |  🕐 {str(b['created_at'])[:16]}"
             )
-        kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("➕ نسخة جديدة", callback_data="ent:backup_now"))
-        kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="admin:main"))
+        kb = InlineKeyboardMarkup(row_width=2)
+        kb.add(
+            InlineKeyboardButton("➕ نسخة جديدة", callback_data="ent:backup_now"),
+            back_button("admin:main"),
+        )
         bot.send_message(
             call.message.chat.id, "\n".join(lines),
             parse_mode="Markdown", reply_markup=kb,
@@ -339,11 +342,13 @@ def register_enterprise_handlers(bot: telebot.TeleBot, user_states: dict) -> Non
             f"🚨 بلاغات معلقة: `{count_reports('pending')}`\n"
             f"🚨 بلاغات إجمالية: `{count_reports(None)}`\n"
         )
-        kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("🏅 المتصدرون", callback_data="ent:leaderboard"))
-        kb.add(InlineKeyboardButton("🚨 البلاغات",   callback_data="admin:reports"))
+        kb = InlineKeyboardMarkup(row_width=2)
+        kb.add(
+            InlineKeyboardButton("🏅 المتصدرون", callback_data="ent:leaderboard"),
+            InlineKeyboardButton("🚨 البلاغات",   callback_data="admin:reports"),
+        )
         kb.add(InlineKeyboardButton("📂 النسخ الاحتياطية", callback_data="admin:backups"))
-        kb.add(InlineKeyboardButton("🔙 رجوع",        callback_data="admin:main"))
+        kb.add(back_button("admin:main"))
         try:
             bot.edit_message_text(
                 text, call.message.chat.id, call.message.message_id,
@@ -372,8 +377,8 @@ def _send_achievements(bot, chat_id: int, user_id: int) -> None:
             f"{a['icon']} *{a['title']}*\n"
             f"  _{a.get('description', '')}_ (+{a['xp_reward']} XP)"
         )
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="ent:close"))
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(back_button("ent:close"))
     bot.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", reply_markup=kb)
 
 

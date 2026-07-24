@@ -44,6 +44,7 @@ import json
 import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from handlers.keyboard_utils import back_button
 
 from config import ADMIN_IDS
 from database import get_whisper, is_banned, get_setting
@@ -98,7 +99,7 @@ def whisper_actions_keyboard(whisper_id: str) -> InlineKeyboardMarkup:
 
 
 def whisper_read_keyboard(whisper_id: str, bot_username: str = "") -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup(row_width=1)
+    kb = InlineKeyboardMarkup(row_width=2)
     if bot_username:
         reply_url = f"tg://resolve?domain={bot_username}&start=reply_{whisper_id}"
         kb.add(InlineKeyboardButton("↩️ رد", url=reply_url))
@@ -682,7 +683,7 @@ def _handle_conversation_callback(
     conv_kb = InlineKeyboardMarkup(row_width=2)
     conv_kb.add(
         reply_button(whisper_id),
-        InlineKeyboardButton("🔙 رجوع", callback_data=f"{_CLOSE_CONV_PREFIX}{whisper_id}"),
+        back_button(f"{_CLOSE_CONV_PREFIX}{whisper_id}"),
     )
 
     try:

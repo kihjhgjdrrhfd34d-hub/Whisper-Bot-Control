@@ -1,5 +1,6 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from handlers.keyboard_utils import back_button
 from database import get_user_stats, upsert_user, get_setting, is_banned
 
 
@@ -91,5 +92,5 @@ def _stats_keyboard():
         InlineKeyboardButton("🔄 تحديث", callback_data="refresh_stats"),
         InlineKeyboardButton("🤫 أرسل همسة", switch_inline_query=" "),
     )
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main"))
+    kb.add(back_button("back_to_main"))
     return kb

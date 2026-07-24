@@ -2,6 +2,7 @@ import json
 import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from handlers.keyboard_utils import back_button, cancel_button, confirm_button
 from database import (
     upsert_user, get_setting, is_banned,
     create_whisper, update_whisper_group_message,
@@ -40,7 +41,7 @@ def _get_user_xp(user_id):
 
 def _back_kb(cb_data="pkg_cancel"):
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("❌ إلغاء", callback_data=cb_data))
+    kb.add(cancel_button(cb_data))
     return kb
 
 
@@ -57,7 +58,7 @@ def _build_cover_kb(user_id):
             f"{c['icon']} {c['name']}",
             callback_data=f"pkg_cover:{c['code']}",
         ))
-    kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="pkg_cancel"))
+    kb.add(cancel_button("pkg_cancel"))
     return kb
 
 
@@ -70,7 +71,7 @@ def _build_character_kb(user_id):
             f"{ch['icon']} {ch['name']}",
             callback_data=f"pkg_char:{ch['code']}",
         ))
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="pkg_back_cover"))
+    kb.add(back_button("pkg_back_cover"))
     return kb
 
 
@@ -78,9 +79,9 @@ def _build_draft_kb():
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("✏️ تعديل النص", callback_data="pkg_edit_text"),
-        InlineKeyboardButton("✅ تأكيد", callback_data="pkg_confirm"),
+        confirm_button("تأكيد", "pkg_confirm"),
     )
-    kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="pkg_cancel"))
+    kb.add(cancel_button("pkg_cancel"))
     return kb
 
 
@@ -94,7 +95,7 @@ def _build_type_kb():
         InlineKeyboardButton("👥 لأول 3", callback_data="pkg_type:first_three"),
         InlineKeyboardButton("🎯 مخصصة", callback_data="pkg_type:custom"),
     )
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="pkg_back_chat"))
+    kb.add(back_button("pkg_back_chat"))
     return kb
 
 
@@ -106,7 +107,7 @@ def _build_type_kb_with_maxreaders():
         ("first_three", 3, "👥 لأول 3"),
     ]:
         kb.add(InlineKeyboardButton(label, callback_data=f"pkg_do:{wtype}:{mr}"))
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="pkg_back_chat"))
+    kb.add(back_button("pkg_back_chat"))
     return kb
 
 

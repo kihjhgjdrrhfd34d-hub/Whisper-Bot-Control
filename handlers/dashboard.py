@@ -21,6 +21,7 @@ Callback data patterns (بادئة dsh = dashboard):
 import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from handlers.keyboard_utils import back_button, confirm_button, cancel_button
 from database import (
     get_whisper, get_readers, reader_count, delete_whisper,
     close_whisper, toggle_pin_whisper, create_whisper,
@@ -85,8 +86,8 @@ def dashboard_keyboard(whisper_id: str) -> InlineKeyboardMarkup:
 
 
 def _back_button(whisper_id: str) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🔙 عودة للوحة التحكم", callback_data=f"{_DASH_PREFIX}show:{whisper_id}"))
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(back_button(f"{_DASH_PREFIX}show:{whisper_id}"))
     return kb
 
 
@@ -476,8 +477,8 @@ def register_dashboard_handlers(bot: telebot.TeleBot, user_states: dict) -> None
             return
         confirm_kb = InlineKeyboardMarkup(row_width=2)
         confirm_kb.add(
-            InlineKeyboardButton("✅ نعم، احذف", callback_data=f"{_DASH_PREFIX}cdel:{whisper_id}"),
-            InlineKeyboardButton("❌ إلغاء", callback_data=f"{_DASH_PREFIX}show:{whisper_id}"),
+            confirm_button("نعم، احذف", f"{_DASH_PREFIX}cdel:{whisper_id}"),
+            cancel_button(f"{_DASH_PREFIX}show:{whisper_id}"),
         )
         bot.answer_callback_query(call.id)
         try:

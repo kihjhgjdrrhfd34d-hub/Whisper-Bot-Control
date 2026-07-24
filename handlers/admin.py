@@ -15,6 +15,7 @@ import time
 import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from handlers.keyboard_utils import back_button, cancel_button, page_indicator
 from database import (
     get_setting, set_setting, get_stats, get_group_stats, get_detailed_stats,
     get_all_users,
@@ -118,46 +119,66 @@ def _toggle_btn(label: str, key: str,
 
 
 def settings_keyboard() -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(_toggle_btn(
-        "حالة البوت", "bot_active",
-        icon_on="🤖 البوت يعمل ✅", icon_off="🤖 البوت متوقف ❌",
-    ))
-    kb.add(_toggle_btn("✅ التحقق من الاشتراك الإجباري", "membership_check"))
-    kb.add(_toggle_btn("🔒 حماية المحتوى ومنع التوجيه",  "content_protection"))
-    kb.add(_toggle_btn("👁 إشعارات القراءة للمرسل",       "read_receipt_enabled"))
-    kb.add(_toggle_btn("🗑 الحذف التلقائي للهمسات",       "auto_delete_enabled"))
+    kb = InlineKeyboardMarkup(row_width=2)
 
+    # 🛡️ الحماية
+    kb.add(InlineKeyboardButton("🛡️ الحماية", callback_data="noop"))
+    kb.add(
+        _toggle_btn("حماية المحتوى ومنع التوجيه", "content_protection"),
+        _toggle_btn("التحقق من الاشتراك الإجباري", "membership_check"),
+    )
+    kb.add(_toggle_btn("مكافحة السبام (Anti-Spam)", "antispam_enabled"))
+
+    # 💬 الهمسات
+    kb.add(InlineKeyboardButton("💬 الهمسات", callback_data="noop"))
+    kb.add(
+        _toggle_btn("حالة البوت", "bot_active",
+                    icon_on="🤖 ✅", icon_off="🤖 ❌"),
+        _toggle_btn("إشعارات القراءة للمرسل", "read_receipt_enabled"),
+    )
+    kb.add(
+        _toggle_btn("الردود على الهمسات", "whisper_replies_enabled"),
+        _toggle_btn("الحذف التلقائي", "auto_delete_enabled"),
+    )
+
+    # ⏰ مدة الحذف التلقائي
+    kb.add(InlineKeyboardButton("⏰ مدة الحذف التلقائي", callback_data="noop"))
     current_hours = get_setting("auto_delete_hours") or "24"
     kb.add(InlineKeyboardButton(
-        f"⏰ مدة الحذف الحالية: {current_hours} ساعة", callback_data="noop",
+        f"المدة الحالية: {current_hours} ساعة", callback_data="noop",
     ))
     kb.add(
         InlineKeyboardButton("1 ساعة",  callback_data="quick_hours:1"),
         InlineKeyboardButton("6 ساعات", callback_data="quick_hours:6"),
-        InlineKeyboardButton("12 ساعة", callback_data="quick_hours:12"),
     )
     kb.add(
+        InlineKeyboardButton("12 ساعة", callback_data="quick_hours:12"),
         InlineKeyboardButton("24 ساعة", callback_data="quick_hours:24"),
+    )
+    kb.add(
         InlineKeyboardButton("48 ساعة", callback_data="quick_hours:48"),
         InlineKeyboardButton("7 أيام",  callback_data="quick_hours:168"),
     )
-    kb.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="admin:main"))
-    kb.add(InlineKeyboardButton("── Enterprise ──", callback_data="noop"))
-    kb.add(_toggle_btn("⚔️ مكافحة السبام (Anti-Spam)", "antispam_enabled"))
-    kb.add(_toggle_btn("⭐ نظام نقاط XP",              "xp_enabled"))
-    kb.add(_toggle_btn("💾 نسخ احتياطي تلقائي",        "auto_backup_enabled"))
-    kb.add(InlineKeyboardButton("── الردود ──", callback_data="noop"))
-    kb.add(_toggle_btn("💬 الردود على الهمسات",         "whisper_replies_enabled"))
+
+    # ⭐ الإضافات
+    kb.add(InlineKeyboardButton("⭐ الإضافات", callback_data="noop"))
+    kb.add(
+        _toggle_btn("نظام نقاط XP", "xp_enabled"),
+        _toggle_btn("نسخ احتياطي تلقائي", "auto_backup_enabled"),
+    )
+
+    kb.add(back_button("admin:main"))
     return kb
 
 
 def broadcast_keyboard() -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(InlineKeyboardButton("⚡ إذاعة سريعة (توجيه مباشر)", callback_data="admin:broadcast_quick"))
-    kb.add(InlineKeyboardButton("📝 إذاعة عادية (نص/صورة/فيديو)", callback_data="admin:broadcast_normal"))
-    kb.add(InlineKeyboardButton("↩️ توجيه رسالة محددة",           callback_data="admin:broadcast_forward"))
-    kb.add(InlineKeyboardButton("🔙 رجوع",                        callback_data="admin:main"))
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("⚡ إذاعة سريعة", callback_data="admin:broadcast_quick"),
+        InlineKeyboardButton("📝 إذاعة عادية", callback_data="admin:broadcast_normal"),
+    )
+    kb.add(InlineKeyboardButton("↩️ توجيه رسالة", callback_data="admin:broadcast_forward"))
+    kb.add(back_button("admin:main"))
     return kb
 
 
@@ -173,25 +194,26 @@ def channels_keyboard() -> InlineKeyboardMarkup:
     else:
         kb.add(InlineKeyboardButton("ℹ️ لا توجد قنوات مضافة", callback_data="noop"))
     kb.add(InlineKeyboardButton("➕ إضافة قناة جديدة", callback_data="admin:add_channel"))
-    kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="admin:main"))
+    kb.add(back_button("admin:main"))
     return kb
 
 
 def _users_keyboard(page: int, total: int) -> InlineKeyboardMarkup:
     """Pagination keyboard for the users list."""
-    kb = InlineKeyboardMarkup(row_width=3)
+    kb = InlineKeyboardMarkup(row_width=2)
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("◀️ السابق", callback_data=f"admin:users:{page - 1}"))
-    nav.append(InlineKeyboardButton(f"📄 {page + 1}", callback_data="noop"))
+    total_pages = max(1, (total + _USERS_PER_PAGE - 1) // _USERS_PER_PAGE)
+    nav.append(page_indicator(page + 1, total_pages))
     if (page + 1) * _USERS_PER_PAGE < total:
         nav.append(InlineKeyboardButton("التالي ▶️", callback_data=f"admin:users:{page + 1}"))
     if nav:
         kb.row(*nav)
     kb.add(
         InlineKeyboardButton("🔍 بحث عن مستخدم", callback_data="admin:search_user"),
-        InlineKeyboardButton("🔙 رجوع",           callback_data="admin:main"),
     )
+    kb.add(back_button("admin:main"))
     return kb
 
 
@@ -342,9 +364,11 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             f"├ همسات اليوم: `{s['whispers_today']}`\n"
             f"└ إجمالي القراءات: `{s['total_reads']}`"
         )
-        kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("🔄 تحديث", callback_data="admin:stats"))
-        kb.add(InlineKeyboardButton("🔙 رجوع",  callback_data="admin:main"))
+        kb = InlineKeyboardMarkup(row_width=2)
+        kb.add(
+            InlineKeyboardButton("🔄 تحديث", callback_data="admin:stats"),
+            back_button("admin:main"),
+        )
         _safe_edit_text(bot, call, text, kb)
 
     # ── Group statistics ─────────────────────────────────────────────────────
@@ -383,9 +407,11 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             f"└ *أفضل 5 قرّاء:*\n"
             f"{readers_lines}"
         )
-        kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("🔄 تحديث", callback_data="admin:group_stats"))
-        kb.add(InlineKeyboardButton("🔙 رجوع",  callback_data="admin:main"))
+        kb = InlineKeyboardMarkup(row_width=2)
+        kb.add(
+            InlineKeyboardButton("🔄 تحديث", callback_data="admin:group_stats"),
+            back_button("admin:main"),
+        )
         _safe_edit_text(bot, call, text, kb)
 
     # ── Detailed statistics ─────────────────────────────────────────────────
@@ -419,9 +445,11 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             f"├ نوع DB: `{s['db_type']}`\n"
             f"└ الحالة: {s['conn_status']}"
         )
-        kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("🔄 تحديث", callback_data="admin:detailed_stats"))
-        kb.add(InlineKeyboardButton("🔙 رجوع", callback_data="admin:main"))
+        kb = InlineKeyboardMarkup(row_width=2)
+        kb.add(
+            InlineKeyboardButton("🔄 تحديث", callback_data="admin:detailed_stats"),
+            back_button("admin:main"),
+        )
         _safe_edit_text(bot, call, text, kb)
 
     # ── Users list (paginated) ───────────────────────────────────────────────
@@ -474,7 +502,7 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             return
         user_states[call.from_user.id] = {"action": "search_user"}
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="cancel_admin_input"))
+        kb.add(cancel_button("cancel_admin_input"))
         bot.send_message(
             call.message.chat.id,
             "🔍 أرسل يوزرنيم أو ID المستخدم للبحث:",
@@ -532,7 +560,7 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             return
         user_states[call.from_user.id] = {"action": "broadcast_quick"}
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="cancel_admin_input"))
+        kb.add(cancel_button("cancel_admin_input"))
         bot.send_message(
             call.message.chat.id,
             "⚡ *الإذاعة السريعة*\n\nأرسل الرسالة الآن وسيتم توجيهها لجميع المستخدمين:",
@@ -546,7 +574,7 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             return
         user_states[call.from_user.id] = {"action": "broadcast_normal"}
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="cancel_admin_input"))
+        kb.add(cancel_button("cancel_admin_input"))
         bot.send_message(
             call.message.chat.id,
             "📝 *الإذاعة العادية*\n\nأرسل النص أو الصورة أو الفيديو:",
@@ -560,7 +588,7 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             return
         user_states[call.from_user.id] = {"action": "broadcast_forward"}
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="cancel_admin_input"))
+        kb.add(cancel_button("cancel_admin_input"))
         bot.send_message(
             call.message.chat.id,
             "↩️ *توجيه رسالة*\n\nأعد توجيه أي رسالة تريد إرسالها للمستخدمين:",
@@ -588,7 +616,7 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             return
         user_states[call.from_user.id] = {"action": "add_channel"}
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("❌ إلغاء", callback_data="cancel_admin_input"))
+        kb.add(cancel_button("cancel_admin_input"))
         bot.send_message(
             call.message.chat.id,
             "📌 *إضافة قناة*\n\nأرسل معرف القناة:\n"
