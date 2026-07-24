@@ -15,7 +15,7 @@ import time
 import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from handlers.keyboard_utils import back_button, cancel_button, page_indicator
+from handlers.keyboard_utils import back_button, cancel_button, page_indicator, section_header, toggle_button, status_button
 from database import (
     get_setting, set_setting, get_stats, get_group_stats, get_detailed_stats,
     get_all_users,
@@ -73,11 +73,11 @@ def admin_main_keyboard() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton(
-            f"{'✅' if notify_new_user == '1' else '❌'} إشعارات الدخول",
+            f"{'🔔' if notify_new_user == '1' else '🔕'} إشعارات الدخول",
             callback_data="admin:notify_new_user",
         ),
         InlineKeyboardButton(
-            f"{'✅' if notify_block == '1' else '❌'} إشعارات الحظر",
+            f"{'🔔' if notify_block == '1' else '🔕'} إشعارات الحظر",
             callback_data="admin:notify_block",
         ),
     )
@@ -86,27 +86,24 @@ def admin_main_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton("📈 إحصائيات المجموعة",    callback_data="admin:group_stats"),
     )
     kb.add(
-        InlineKeyboardButton("📊 إحصائيات متقدمة", callback_data="admin:detailed_stats"),
+        InlineKeyboardButton("📊 إحصائيات متقدمة",      callback_data="admin:detailed_stats"),
+        InlineKeyboardButton("👥 المستخدمون",            callback_data="admin:users:0"),
     )
     kb.add(
-        InlineKeyboardButton("📢 الإذاعة",         callback_data="admin:broadcast"),
+        InlineKeyboardButton("📢 الإذاعة",               callback_data="admin:broadcast"),
+        InlineKeyboardButton("📨 البلاغات",              callback_data="admin:reports"),
     )
     kb.add(
-        InlineKeyboardButton("👥 المستخدمون",      callback_data="admin:users:0"),
-        InlineKeyboardButton("⚙️ إعدادات البوت",  callback_data="admin:settings"),
+        InlineKeyboardButton("⚙️ إعدادات البوت",        callback_data="admin:settings"),
+        InlineKeyboardButton("⚙️ إعدادات المجموعات",    callback_data="admin:group_settings"),
     )
     kb.add(
-        InlineKeyboardButton("📌 الاشتراك الإجباري", callback_data="admin:channels"),
+        InlineKeyboardButton("📌 الاشتراك الإجباري",     callback_data="admin:channels"),
+        InlineKeyboardButton("💎 Enterprise",            callback_data="admin:enterprise_stats"),
     )
     kb.add(
-        InlineKeyboardButton("🚨 البلاغات",          callback_data="admin:reports"),
-        InlineKeyboardButton("📂 النسخ الاحتياطية", callback_data="admin:backups"),
-    )
-    kb.add(
-        InlineKeyboardButton("⚙️ إعدادات الهمسات", callback_data="admin:group_settings"),
-    )
-    kb.add(
-        InlineKeyboardButton("🏢 إحصائيات Enterprise", callback_data="admin:enterprise_stats"),
+        InlineKeyboardButton("📂 النسخ الاحتياطية",      callback_data="admin:backups"),
+        back_button("back_to_main"),
     )
     return kb
 
@@ -118,35 +115,53 @@ def _toggle_btn(label: str, key: str,
     return InlineKeyboardButton(f"{icon} {label}", callback_data=f"toggle:{key}")
 
 
+def _stats_refresh_keyboard(refresh_cb: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("🔄 تحديث", callback_data=refresh_cb),
+        back_button("admin:main"),
+    )
+    return kb
+
+
 def settings_keyboard() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
 
-    # 🛡️ الحماية
-    kb.add(InlineKeyboardButton("🛡️ الحماية", callback_data="noop"))
-    kb.add(
-        _toggle_btn("حماية المحتوى ومنع التوجيه", "content_protection"),
-        _toggle_btn("التحقق من الاشتراك الإجباري", "membership_check"),
-    )
-    kb.add(_toggle_btn("مكافحة السبام (Anti-Spam)", "antispam_enabled"))
-
     # 💬 الهمسات
-    kb.add(InlineKeyboardButton("💬 الهمسات", callback_data="noop"))
+    kb.add(section_header("💬 الهمسات"))
     kb.add(
-        _toggle_btn("حالة البوت", "bot_active",
-                    icon_on="🤖 ✅", icon_off="🤖 ❌"),
-        _toggle_btn("إشعارات القراءة للمرسل", "read_receipt_enabled"),
+        toggle_button("حالة البوت", "bot_active",
+                      get_setting("bot_active") == "1",
+                      icon_on="🤖 ✅", icon_off="🤖 ❌"),
+        toggle_button("إشعارات القراءة", "read_receipt_enabled",
+                      get_setting("read_receipt_enabled") == "1"),
     )
     kb.add(
-        _toggle_btn("الردود على الهمسات", "whisper_replies_enabled"),
-        _toggle_btn("الحذف التلقائي", "auto_delete_enabled"),
+        toggle_button("الردود على الهمسات", "whisper_replies_enabled",
+                      get_setting("whisper_replies_enabled") == "1"),
     )
 
-    # ⏰ مدة الحذف التلقائي
-    kb.add(InlineKeyboardButton("⏰ مدة الحذف التلقائي", callback_data="noop"))
+    # 🛡️ الحماية
+    kb.add(section_header("🛡️ الحماية"))
+    kb.add(
+        toggle_button("حماية المحتوى", "content_protection",
+                      get_setting("content_protection") == "1"),
+        toggle_button("التحقق من الاشتراك", "membership_check",
+                      get_setting("membership_check") == "1"),
+    )
+    kb.add(
+        toggle_button("مكافحة السبام", "antispam_enabled",
+                      get_setting("antispam_enabled") == "1"),
+    )
+
+    # 🗑️ الحذف التلقائي
+    kb.add(section_header("🗑️ الحذف التلقائي"))
+    kb.add(
+        toggle_button("تفعيل الحذف التلقائي", "auto_delete_enabled",
+                      get_setting("auto_delete_enabled") == "1"),
+    )
     current_hours = get_setting("auto_delete_hours") or "24"
-    kb.add(InlineKeyboardButton(
-        f"المدة الحالية: {current_hours} ساعة", callback_data="noop",
-    ))
+    kb.add(status_button("المدة", f"{current_hours} ساعة", "⏱"))
     kb.add(
         InlineKeyboardButton("1 ساعة",  callback_data="quick_hours:1"),
         InlineKeyboardButton("6 ساعات", callback_data="quick_hours:6"),
@@ -161,10 +176,12 @@ def settings_keyboard() -> InlineKeyboardMarkup:
     )
 
     # ⭐ الإضافات
-    kb.add(InlineKeyboardButton("⭐ الإضافات", callback_data="noop"))
+    kb.add(section_header("⭐ الإضافات"))
     kb.add(
-        _toggle_btn("نظام نقاط XP", "xp_enabled"),
-        _toggle_btn("نسخ احتياطي تلقائي", "auto_backup_enabled"),
+        toggle_button("نظام نقاط XP", "xp_enabled",
+                      get_setting("xp_enabled") == "1"),
+        toggle_button("نسخ احتياطي تلقائي", "auto_backup_enabled",
+                      get_setting("auto_backup_enabled") == "1"),
     )
 
     kb.add(back_button("admin:main"))
@@ -230,7 +247,7 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             return
         bot.send_message(
             msg.chat.id,
-            "🛡 *لوحة التحكم الإدارية*\n\nمرحباً بك يا أدمن! اختر القسم المطلوب:",
+            "🛠 *لوحة تحكم الإدارة*\n\nمرحباً بك يا أدمن! اختر القسم المطلوب:",
             parse_mode="Markdown",
             reply_markup=admin_main_keyboard(),
         )
@@ -244,7 +261,7 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             return
         _safe_edit_text(
             bot, call,
-            "🛡 *لوحة التحكم الإدارية*\n\naختر القسم المطلوب:",
+            "🛠 *لوحة تحكم الإدارة*\n\nاختر القسم المطلوب:",
             admin_main_keyboard(),
         )
 
@@ -364,12 +381,7 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             f"├ همسات اليوم: `{s['whispers_today']}`\n"
             f"└ إجمالي القراءات: `{s['total_reads']}`"
         )
-        kb = InlineKeyboardMarkup(row_width=2)
-        kb.add(
-            InlineKeyboardButton("🔄 تحديث", callback_data="admin:stats"),
-            back_button("admin:main"),
-        )
-        _safe_edit_text(bot, call, text, kb)
+        _safe_edit_text(bot, call, text, _stats_refresh_keyboard("admin:stats"))
 
     # ── Group statistics ─────────────────────────────────────────────────────
     @bot.callback_query_handler(func=lambda c: c.data == "admin:group_stats")
@@ -407,12 +419,7 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             f"└ *أفضل 5 قرّاء:*\n"
             f"{readers_lines}"
         )
-        kb = InlineKeyboardMarkup(row_width=2)
-        kb.add(
-            InlineKeyboardButton("🔄 تحديث", callback_data="admin:group_stats"),
-            back_button("admin:main"),
-        )
-        _safe_edit_text(bot, call, text, kb)
+        _safe_edit_text(bot, call, text, _stats_refresh_keyboard("admin:group_stats"))
 
     # ── Detailed statistics ─────────────────────────────────────────────────
     @bot.callback_query_handler(func=lambda c: c.data == "admin:detailed_stats")
@@ -445,12 +452,7 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             f"├ نوع DB: `{s['db_type']}`\n"
             f"└ الحالة: {s['conn_status']}"
         )
-        kb = InlineKeyboardMarkup(row_width=2)
-        kb.add(
-            InlineKeyboardButton("🔄 تحديث", callback_data="admin:detailed_stats"),
-            back_button("admin:main"),
-        )
-        _safe_edit_text(bot, call, text, kb)
+        _safe_edit_text(bot, call, text, _stats_refresh_keyboard("admin:detailed_stats"))
 
     # ── Users list (paginated) ───────────────────────────────────────────────
     @bot.callback_query_handler(func=lambda c: c.data.startswith("admin:users:"))
