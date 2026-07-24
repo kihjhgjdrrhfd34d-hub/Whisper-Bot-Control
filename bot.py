@@ -69,8 +69,8 @@ def _notify_admins_new_user(user):
     for admin_id in ADMIN_IDS:
         try:
             bot.send_message(admin_id, text, parse_mode="Markdown")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed to notify admin %s about new user %s: %s", admin_id, user.id, exc)
 
 
 def _notify_admins_block(user):
@@ -87,8 +87,8 @@ def _notify_admins_block(user):
     for admin_id in ADMIN_IDS:
         try:
             bot.send_message(admin_id, text, parse_mode="Markdown")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed to notify admin %s about user %s blocking bot: %s", admin_id, user.id, exc)
 
 
 def _notify_admins_unblock(user):
@@ -105,8 +105,26 @@ def _notify_admins_unblock(user):
     for admin_id in ADMIN_IDS:
         try:
             bot.send_message(admin_id, text, parse_mode="Markdown")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed to notify admin %s about user %s unblocking bot: %s", admin_id, user.id, exc)
+
+
+def _notify_admins_returning_user(user):
+    """Notify admins that a returning user started the bot again (if toggle is on)."""
+    if get_setting("notify_returning_user") != "1":
+        return
+    uname = _fmt_username(user.username) if user.username else "—"
+    text = (
+        "🔄 *مستخدم عاد لاستخدام البوت*\n\n"
+        f"👤 الاسم: {user.first_name or '—'}\n"
+        f"🔗 اليوزر: {uname}\n"
+        f"🆔 الآيدي: `{user.id}`"
+    )
+    for admin_id in ADMIN_IDS:
+        try:
+            bot.send_message(admin_id, text, parse_mode="Markdown")
+        except Exception as exc:
+            logger.exception("Failed to notify admin %s about returning user %s: %s", admin_id, user.id, exc)
 
 
 def _send_help(b, chat_id):
@@ -199,6 +217,7 @@ def start_cmd(msg: telebot.types.Message):
         _notify_admins_new_user(user)
         _enterprise_on_new_user(user.id)
     else:
+        _notify_admins_returning_user(user)
         _enterprise_on_every_start(user.id)
 
     # ── Extract payload from deep link (e.g. /start <whisper_id>) ────────
@@ -404,8 +423,8 @@ def handle_chat_member_update(update: telebot.types.ChatMemberUpdated):
     old_status = update.old_chat_member.status
     new_status = update.new_chat_member.status
 
-    # blocked: was member/active → now kicked
-    if new_status == "kicked" and old_status in ("member", "creator", "administrator"):
+    # blocked: was member/active/left → now kicked
+    if new_status == "kicked" and old_status in ("member", "creator", "administrator", "left"):
         upsert_user(user.id, user.username, user.first_name, user.last_name)
         _notify_admins_block(user)
 
