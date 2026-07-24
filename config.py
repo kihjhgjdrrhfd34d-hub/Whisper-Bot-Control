@@ -22,6 +22,7 @@ DEFAULT_SETTINGS = {
     "auto_delete_enabled": "0",
     "auto_delete_hours": "24",
     "notify_new_user": "1",
+    "notify_returning_user": "1",
     "notify_block": "1",
     "antispam_enabled": "1",
     "xp_enabled": "1",
