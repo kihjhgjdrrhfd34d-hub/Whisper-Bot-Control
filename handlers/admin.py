@@ -689,28 +689,34 @@ def _safe_edit_text(bot: telebot.TeleBot, call: telebot.types.CallbackQuery,
 def do_broadcast(bot: telebot.TeleBot, msg: telebot.types.Message,
                  mode: str) -> tuple:
     from database import get_all_users as _get_all
-    rows, _total = _get_all(page=0, per_page=999_999)
+    BATCH_SIZE = 100
+    page = 0
     sent = 0
     failed = 0
-    for u in rows:
-        try:
-            uid = u["user_id"]
-            if mode in ("quick", "forward"):
-                bot.forward_message(uid, msg.chat.id, msg.message_id)
-            elif mode == "normal":
-                ct = msg.content_type
-                if ct == "text":
-                    bot.send_message(uid, msg.text or "")
-                elif ct == "photo":
-                    bot.send_photo(uid, msg.photo[-1].file_id, caption=msg.caption)
-                elif ct == "video":
-                    bot.send_video(uid, msg.video.file_id, caption=msg.caption)
-                elif ct == "document":
-                    bot.send_document(uid, msg.document.file_id, caption=msg.caption)
-                else:
+    while True:
+        rows, _ = _get_all(page=page, per_page=BATCH_SIZE)
+        if not rows:
+            break
+        for u in rows:
+            try:
+                uid = u["user_id"]
+                if mode in ("quick", "forward"):
                     bot.forward_message(uid, msg.chat.id, msg.message_id)
-            sent += 1
-        except Exception:
-            failed += 1
-        time.sleep(0.04)   # Telegram rate-limit: ~25 msg/s
+                elif mode == "normal":
+                    ct = msg.content_type
+                    if ct == "text":
+                        bot.send_message(uid, msg.text or "")
+                    elif ct == "photo":
+                        bot.send_photo(uid, msg.photo[-1].file_id, caption=msg.caption)
+                    elif ct == "video":
+                        bot.send_video(uid, msg.video.file_id, caption=msg.caption)
+                    elif ct == "document":
+                        bot.send_document(uid, msg.document.file_id, caption=msg.caption)
+                    else:
+                        bot.forward_message(uid, msg.chat.id, msg.message_id)
+                sent += 1
+            except Exception:
+                failed += 1
+            time.sleep(0.04)   # Telegram rate-limit: ~25 msg/s
+        page += 1
     return sent, failed

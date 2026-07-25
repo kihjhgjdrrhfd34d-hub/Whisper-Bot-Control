@@ -74,56 +74,29 @@ DESTRUCTIVE_OPTIONS = [
 def build_media_whisper_inline_results(pending, bot_username, hours):
     """
     Build inline results for a pending media whisper.
-    Same structure as text whisper results — reuses create_whisper().
+    Creates placeholder results — the actual whisper is created
+    in handle_chosen() when user selects a type.
     Returns list of InlineQueryResultArticle.
     """
     results = []
-    user_id = pending["user_id"]
-    media_content = pending["content"] or ""
-    message_type = pending["message_type"]
-    file_id = pending["file_id"]
-    caption = pending["caption"]
+    pending_id = pending["id"]
 
-    location_lat = None
-    location_lon = None
-    if message_type == "location" and file_id:
-        try:
-            loc_data = json.loads(file_id)
-            location_lat = loc_data.get("latitude")
-            location_lon = loc_data.get("longitude")
-        except Exception:
-            pass
+    placeholder_kb = InlineKeyboardMarkup(row_width=1)
+    placeholder_kb.add(InlineKeyboardButton("⏳ جاري التجهيز...", callback_data="noop"))
 
     for wtype, max_r, title, desc, group_text in FOUR_OPTIONS:
         if wtype == "custom":
             continue
         try:
-            wid = create_whisper(
-                sender_id=user_id,
-                content=media_content,
-                whisper_type=wtype,
-                target_users=[],
-                max_readers=max_r,
-                auto_delete_hours=hours,
-                message_type=message_type,
-                file_id=file_id,
-                caption=caption,
-                location_lat=location_lat,
-                location_lon=location_lon,
-            )
-            kb = InlineKeyboardMarkup(row_width=1)
-            kb.add(InlineKeyboardButton(
-                "🔒 اضغط للرؤية", callback_data=f"read:{wid}",
-            ))
             results.append(
                 InlineQueryResultArticle(
-                    id=f"{wtype}:{wid}",
+                    id=f"media:{pending_id}:{wtype}",
                     title=title,
                     description=desc,
                     input_message_content=InputTextMessageContent(
-                        message_text="🔒 اضغط للرؤية",
+                        message_text="⏳ جاري تجهيز الهمسة...",
                     ),
-                    reply_markup=kb,
+                    reply_markup=placeholder_kb,
                 )
             )
         except Exception as e:
@@ -131,33 +104,15 @@ def build_media_whisper_inline_results(pending, bot_username, hours):
 
     for wtype, max_r, title, desc, group_text in DESTRUCTIVE_OPTIONS:
         try:
-            wid = create_whisper(
-                sender_id=user_id,
-                content=media_content,
-                whisper_type=wtype,
-                target_users=[],
-                max_readers=max_r,
-                auto_delete_hours=hours,
-                is_destructive=True,
-                message_type=message_type,
-                file_id=file_id,
-                caption=caption,
-                location_lat=location_lat,
-                location_lon=location_lon,
-            )
-            kb = InlineKeyboardMarkup(row_width=1)
-            kb.add(InlineKeyboardButton(
-                "🔒 اضغط للرؤية", callback_data=f"read:{wid}",
-            ))
             results.append(
                 InlineQueryResultArticle(
-                    id=f"destructive:{wtype}:{wid}",
+                    id=f"media:destructive:{pending_id}:{wtype}",
                     title=title,
                     description=desc,
                     input_message_content=InputTextMessageContent(
-                        message_text="🔒 اضغط للرؤية",
+                        message_text="⏳ جاري تجهيز الهمسة...",
                     ),
-                    reply_markup=kb,
+                    reply_markup=placeholder_kb,
                 )
             )
         except Exception as e:

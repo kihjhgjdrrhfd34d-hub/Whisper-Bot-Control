@@ -199,10 +199,6 @@ def register_inline_handlers(bot: telebot.TeleBot):
                             )
                         except Exception as e:
                             logger.error(f"answer_inline_query (m: media): {e}")
-                        try:
-                            delete_pending_media_by_id(_pending["id"])
-                        except Exception:
-                            pass
                         return
 
         # ── Wrapped whisper "ww:" prefix — create placeholder results ────
@@ -477,6 +473,11 @@ def register_inline_handlers(bot: telebot.TeleBot):
             _handle_wrapped_chosen(bot, result, _auto_hours())
             return
 
+        # ── Media whisper: create whisper from pending ────────────────────
+        if result_id.startswith("media:"):
+            _handle_media_chosen(bot, result)
+            return
+
         # ── Detect destructive prefix ────────────────────────────────────
         if result_id.startswith("destructive:"):
             _, wtype, wid = result_id.split(":", 2)
@@ -657,3 +658,96 @@ def _handle_wrapped_chosen(bot, result, hours):
     except Exception:
         pass
     logger.info("[WW] whisper created wid=%s wtype=%s destructive=%s pkg=%s", wid, wtype, is_destructive, pkg_id)
+
+
+def _handle_media_chosen(bot, result):
+    """Handle chosen inline result for media whispers — create whisper now."""
+    user = result.from_user
+    result_id = result.result_id
+    parts = result_id.split(":")
+
+    if len(parts) == 3:
+        _, pending_id_str, wtype = parts
+        is_destructive = False
+    elif len(parts) == 4:
+        _, _, pending_id_str, wtype = parts
+        is_destructive = True
+    else:
+        return
+
+    try:
+        pending_id = int(pending_id_str)
+    except ValueError:
+        return
+
+    pending = get_pending_media_by_id(pending_id)
+    if not pending or pending["user_id"] != user.id:
+        return
+
+    hours = _auto_hours()
+    media_content = pending["content"] or ""
+    message_type = pending["message_type"]
+    file_id = pending["file_id"]
+    caption = pending["caption"]
+
+    location_lat = None
+    location_lon = None
+    if message_type == "location" and file_id:
+        try:
+            loc_data = json.loads(file_id)
+            location_lat = loc_data.get("latitude")
+            location_lon = loc_data.get("longitude")
+        except Exception:
+            pass
+
+    max_readers_map = {"first_one": 1, "everyone": 0, "first_three": 3, "custom": 0}
+    max_r = max_readers_map.get(wtype, 0)
+
+    wid = create_whisper(
+        sender_id=user.id,
+        content=media_content,
+        whisper_type=wtype,
+        target_users=[],
+        max_readers=max_r,
+        auto_delete_hours=hours,
+        is_destructive=is_destructive,
+        message_type=message_type,
+        file_id=file_id,
+        caption=caption,
+        location_lat=location_lat,
+        location_lon=location_lon,
+    )
+
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(InlineKeyboardButton("🔒 اضغط للرؤية", callback_data=f"read:{wid}"))
+
+    imid = result.inline_message_id
+    if imid:
+        try:
+            bot.edit_message_text(
+                "🔒 اضغط للرؤية",
+                inline_message_id=imid,
+                reply_markup=kb,
+            )
+        except Exception as exc:
+            logger.warning("[MEDIA] edit inline message FAILED wid=%s: %s", wid, exc)
+    else:
+        logger.warning("[MEDIA] inline_message_id is None — cannot edit placeholder. wid=%s", wid)
+
+    if imid:
+        try:
+            update_whisper_group_message(wid, inline_message_id=imid)
+        except Exception as exc:
+            logger.warning("[MEDIA] store inline_message_id failed: %s", exc)
+
+    try:
+        delete_pending_media_by_id(pending_id)
+    except Exception:
+        pass
+
+    try:
+        send_dashboard(bot, user.id, wid)
+    except Exception as exc:
+        logger.warning("[MEDIA] send_dashboard failed: %s", exc)
+
+    logger.info("[MEDIA] whisper created wid=%s wtype=%s destructive=%s pending_id=%s", wid, wtype, is_destructive, pending_id)

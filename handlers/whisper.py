@@ -787,7 +787,7 @@ def _register_callback_handlers(bot, user_states):
                 _notify_sender_reader_name(w, reader_count_val)
                 logger.debug("[NOTIFY] _notify_sender_reader_name completed whisper_id=%s", whisper_id)
 
-            if w["whisper_type"] in ("everyone", "first_one", "first_three"):
+            if w["whisper_type"] == "everyone":
                 _notify_sender_read(w)
             if w["whisper_type"] == "everyone":
                 return

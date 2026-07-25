@@ -421,6 +421,8 @@ def start_cmd(msg: telebot.types.Message):
 @bot.my_chat_member_handler()
 def handle_chat_member_update(update: telebot.types.ChatMemberUpdated):
     """Detect when a user blocks or unblocks the bot."""
+    if update.chat.type != "private":
+        return
     user = update.from_user
     old_status = update.old_chat_member.status
     new_status = update.new_chat_member.status

@@ -761,6 +761,8 @@ def can_read_whisper(whisper_id, user_id):
     if wtype == "first_one":
         if w["sender_id"] == user_id:
             return True, "sender"
+        if w["is_locked"]:
+            return False, "locked"
         readers = get_readers(whisper_id)
         if len(readers) == 0 or any(r["user_id"] == user_id for r in readers):
             return True, "allowed"
@@ -769,10 +771,14 @@ def can_read_whisper(whisper_id, user_id):
     if wtype == "first_three":
         readers = get_readers(whisper_id)
         if len(readers) < 3 or any(r["user_id"] == user_id for r in readers):
+            if w["is_locked"]:
+                return False, "locked"
             return True, "allowed"
         return False, "taken"
 
     if wtype == "custom":
+        if w["is_locked"]:
+            return False, "locked"
         targets = json.loads(w["target_users"])
         if user_id in targets or str(user_id) in targets:
             return True, "allowed"
