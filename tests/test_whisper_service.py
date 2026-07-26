@@ -213,8 +213,8 @@ class TestBuildFirstOneNotification(unittest.TestCase):
         u = self._make_user()
         w = {"content": "secret message"}
         msg = build_first_one_notification(u, w)
-        self.assertIn("تمت مشاهدة هذه الهمسة", msg)
-        self.assertIn("alice", msg)
+        self.assertIn("تم مشاهدة همستك", msg)
+        self.assertIn("@alice", msg)
         self.assertIn("Alice", msg)
         self.assertIn("60001", msg)
         self.assertIn("secret message", msg)

@@ -108,36 +108,99 @@ def get_user_display(user) -> str:
 
 # ── Message builders (pure data → string) ────────────────────────────
 
-def build_first_one_notification(user, w: dict) -> str:
-    """Build the detailed HTML notification for a first_one read."""
-    username_display = f"@{escape(user.username)}" if user.username else "لا يوجد"
+def _build_read_notification_text(user, w: dict) -> str:
+    """Build a detailed notification text with reader info and whisper content."""
+    username_display = f"@{escape(user.username)}" if user.username else "لا يوجد معرف"
     name_display = escape(user.first_name) if user.first_name else "مستخدم مجهول"
-    content_escaped = escape(w["content"])
+    content_raw = w.get("content") or ""
+    content_escaped = escape(content_raw)
+    media_line = ""
+    mt = w.get("message_type")
+    if mt:
+        label = {
+            "photo": "🖼 صورة",
+            "video": "🎬 فيديو",
+            "voice": "🎤 تسجيل صوتي",
+            "audio": "🎵 ملف صوتي",
+            "document": "📄 مستند",
+            "location": "📍 موقع",
+            "animation": "🎞 متحركة",
+        }.get(mt, mt)
+        desc = escape(w.get("caption") or content_raw or "")
+        media_line = f"\n📎 {label}: {desc}"
     return (
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "👁️ تمت مشاهدة هذه الهمسة\n\n"
-        "👤 معرف المستخدم:\n"
-        f"{username_display}\n\n"
-        "🪪 الاسم:\n"
-        f"{name_display}\n\n"
-        "🆔 الآيدي:\n"
-        f"{user.id}\n\n"
-        "💬 الهمسة:\n"
-        f"{content_escaped}\n\n"
+        "👁 تم مشاهدة همستك\n\n"
+        f"👤 {username_display}\n"
+        f"📝 {name_display}\n"
+        f"🆔 {user.id}\n\n"
+        f"💌 {content_escaped}"
+        f"{media_line}\n"
         "━━━━━━━━━━━━━━━━━━━━"
     )
 
 
-def build_read_receipt_message(user) -> str:
-    """Build a simple read receipt message."""
+def build_read_receipt_message(user, w: dict | None = None) -> str:
+    """Build a read receipt message (detailed if w is provided)."""
+    if w is not None:
+        return _build_read_notification_text(user, w)
     display = get_user_display(user)
     return f"👁 قرأ {display} همستك!"
 
 
-def build_destructive_receipt_message(user) -> str:
-    """Build a read receipt for destructive whispers."""
+def build_destructive_receipt_message(user, w: dict | None = None) -> str:
+    """Build a read receipt for destructive whispers (detailed if w is provided)."""
+    if w is not None:
+        return _build_read_notification_text(user, w)
     display = get_user_display(user)
     return f"👁 قرأ {display} همستك التدميرية!"
+
+
+def build_first_one_notification(user, w: dict) -> str:
+    """Build a detailed notification for a first_one read."""
+    return _build_read_notification_text(user, w)
+
+
+def build_first_three_read_notification(user, w: dict) -> str:
+    """Build a notification for a first_three read with reader info and content."""
+    username_str = f"@{user.username}" if user.username else "لا يوجد"
+    name_str = user.first_name or "مستخدم مجهول"
+    content = w.get("content") or ""
+    lines = [
+        "👁 تم مشاهدة همستك",
+        "",
+        "👤 القارئ:",
+        f"• الاسم: {name_str}",
+        f"• المعرف: {username_str}",
+        f"• الآيدي: {user.id}",
+        "",
+        "💌 نص الهمسة:",
+        "",
+        content,
+    ]
+    mt = w.get("message_type")
+    if mt:
+        label = {
+            "photo": "🖼 صورة",
+            "video": "🎬 فيديو",
+            "voice": "🎤 تسجيل صوتي",
+            "audio": "🎵 ملف صوتي",
+            "document": "📄 مستند",
+            "location": "📍 موقع",
+            "animation": "🎞 متحركة",
+        }.get(mt, mt)
+        caption = w.get("caption") or ""
+        lines.extend([
+            "",
+            "إذا كانت الهمسة وسائط:",
+            "",
+            "📎 نوع الهمسة:",
+            label,
+            "",
+            "📝 الوصف:",
+            caption,
+        ])
+    return "\n".join(lines)
 
 
 def build_public_whisper_notification(user, w: dict) -> str:

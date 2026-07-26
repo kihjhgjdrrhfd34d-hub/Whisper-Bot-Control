@@ -634,7 +634,7 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
             c for c in bot.send_message.mock_calls
             if (len(c.args) >= 2
                 and isinstance(c.args[1], str)
-                and "بقراءة همستك للجميع" in c.args[1])
+                and "تم مشاهدة همستك" in c.args[1])
         ]
         self.assertEqual(len(notification_calls), 1,
                          "Notification must be sent when read_notifications is enabled")
@@ -677,7 +677,7 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
             c for c in bot.send_message.mock_calls
             if (len(c.args) >= 2
                 and isinstance(c.args[1], str)
-                and "بقراءة همستك للجميع" in c.args[1])
+                and "تم مشاهدة همستك" in c.args[1])
         ]
         self.assertEqual(len(notification_calls), 1,
                          "Everyone notification must always be sent regardless of read_notifications setting")
@@ -759,12 +759,12 @@ class TestPublicWhisperReadFlow(unittest.TestCase):
 
         read_handler(call)
 
-        # For everyone: notify sender with "👤 قام Bob بقراءة همستك للجميع للتو!"
+        # For everyone: notify sender with the detailed read notification
         notify_calls = [
             c for c in bot.send_message.mock_calls
             if (len(c.args) >= 2
                 and isinstance(c.args[1], str)
-                and "بقراءة همستك للجميع" in c.args[1])
+                and "تم مشاهدة همستك" in c.args[1])
         ]
         self.assertGreaterEqual(
             len(notify_calls), 1,

@@ -24,6 +24,7 @@ from services.whisper_service import (
     get_user_display,
     get_reader_display_name,
     build_first_one_notification,
+    build_first_three_read_notification,
     build_read_receipt_message,
     build_destructive_receipt_message,
     build_public_whisper_notification,
@@ -584,7 +585,7 @@ def _register_callback_handlers(bot, user_states):
             # everyone type: NEVER modify group keyboard, NEVER lock/delete, keep in DB
             if get_setting("read_receipt_enabled") == "1":
                 try:
-                    bot.send_message(w["sender_id"], build_destructive_receipt_message(user))
+                    bot.send_message(w["sender_id"], build_destructive_receipt_message(user, w))
                 except Exception as exc:
                     logger.warning("[DESTROY] destructive receipt failed for sender_id=%s: %s",
                                    w["sender_id"], exc)
@@ -652,7 +653,7 @@ def _register_callback_handlers(bot, user_states):
         def _send_read_receipt(w: dict, is_new_read: bool):
             if is_new_read and get_setting("read_receipt_enabled") == "1":
                 try:
-                    bot.send_message(w["sender_id"], build_read_receipt_message(user))
+                    bot.send_message(w["sender_id"], build_read_receipt_message(user, w))
                 except Exception as exc:
                     logger.warning("[SEND] _send_read_receipt failed for sender_id=%s: %s",
                                    w["sender_id"], exc)
@@ -675,6 +676,16 @@ def _register_callback_handlers(bot, user_states):
                 logger.warning("[SEND] _send_reply_invitation failed for user_id=%s whisper_id=%s: %s",
                                user.id, wid, exc)
 
+        def _notify_sender_first_three_read(w):
+            text = build_first_three_read_notification(user, w)
+            try:
+                bot.send_message(w["sender_id"], text)
+            except Exception as exc:
+                logger.warning(
+                    "[NOTIFY] _notify_sender_first_three_read failed for sender_id=%s whisper_id=%s: %s",
+                    w["sender_id"], whisper_id, exc,
+                )
+
         def _notify_sender_reader_name(w, reader_count_val):
             try:
                 display = get_user_display(user)
@@ -688,16 +699,7 @@ def _register_callback_handlers(bot, user_states):
 
         def _notify_sender_read(w):
             w_dict = dict(w) if not isinstance(w, dict) else w
-            content = w_dict.get("content") or w_dict.get("caption") or "(بدون محتوى)"
-            username_str = f"@{user.username}" if user.username else "غير متوفر"
-            name = user.first_name or "غير معروف"
-            text = (
-                f"👁 تم مشاهدة همستك من قبل:\n\n"
-                f"👤 معرف الشخص: {username_str}\n"
-                f"📝 اسم الشخص: {name}\n"
-                f"🆔 ايدي الشخص: {user.id}\n\n"
-                f"💌 الهمسة:\n{content}"
-            )
+            text = build_read_receipt_message(user, w_dict)
             try:
                 bot.send_message(w_dict["sender_id"], text)
             except Exception as exc:
@@ -781,6 +783,8 @@ def _register_callback_handlers(bot, user_states):
 
             _send_reply_invitation(whisper_id)
             _maybe_self_destruct(whisper_id, w, is_destructive, is_new_read, reader_count_val)
+            if w["whisper_type"] == "first_three":
+                _notify_sender_first_three_read(w)
             if w["whisper_type"] not in ("first_one", "first_three", "everyone"):
                 logger.debug("[NOTIFY] calling _notify_sender_reader_name type=%s reader_count=%d whisper_id=%s",
                              w["whisper_type"], reader_count_val, whisper_id)

@@ -23,6 +23,7 @@ from handlers.dashboard import register_dashboard_handlers
 from handlers._formatting import _fmt_username
 from handlers.media_wizard import register_media_wizard_handlers
 from handlers.media_whispers import register_media_whisper_handlers
+from handlers.contact_whisper import register_contact_whisper_handlers
 
 logger = logging.getLogger(__name__)
 
@@ -300,7 +301,8 @@ def start_cmd(msg: telebot.types.Message):
         )
         from services.whisper_service import (
             record_read_and_check, is_destructive_whisper,
-            build_first_one_notification, build_read_receipt_message,
+            build_first_one_notification, build_first_three_read_notification,
+            build_read_receipt_message,
             build_public_whisper_notification,
         )
 
@@ -401,6 +403,11 @@ def start_cmd(msg: telebot.types.Message):
                 try:
                     reader_first_name = user.first_name or "مستخدم"
                     bot.send_message(sender_id, f"👤 قام {reader_first_name} بقراءة همستك للجميع للتو!")
+                except Exception:
+                    pass
+            elif wtype == "first_three":
+                try:
+                    bot.send_message(sender_id, build_first_three_read_notification(user, w_dict))
                 except Exception:
                     pass
             elif get_setting("read_receipt_enabled") == "1" and wtype not in ("first_one", "first_three"):
@@ -756,6 +763,7 @@ def register_all_handlers():
     from handlers.wrapped_whispers import register_wrapped_whisper_handlers
     register_wrapped_whisper_handlers(bot, user_states)
     register_media_whisper_handlers(bot, user_states)
+    register_contact_whisper_handlers(bot, user_states)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
