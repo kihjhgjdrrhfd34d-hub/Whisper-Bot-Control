@@ -110,6 +110,7 @@ def get_user_display(user) -> str:
 
 def _build_read_notification_text(user, w: dict) -> str:
     """Build a detailed notification text with reader info and whisper content."""
+    w = dict(w)
     username_display = f"@{escape(user.username)}" if user.username else "لا يوجد معرف"
     name_display = escape(user.first_name) if user.first_name else "مستخدم مجهول"
     content_raw = w.get("content") or ""
@@ -163,6 +164,7 @@ def build_first_one_notification(user, w: dict) -> str:
 
 def build_first_three_read_notification(user, w: dict) -> str:
     """Build a notification for a first_three read with reader info and content."""
+    w = dict(w)
     username_str = f"@{user.username}" if user.username else "لا يوجد"
     name_str = user.first_name or "مستخدم مجهول"
     content = w.get("content") or ""

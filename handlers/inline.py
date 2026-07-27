@@ -61,12 +61,9 @@ logger = logging.getLogger(__name__)
 CONTROL_PANEL_TYPES = {"custom"}
 
 
-def _read_button(whisper_id: str, bot_username: str = "") -> InlineKeyboardMarkup:
+def _read_button(whisper_id: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(InlineKeyboardButton("اضغط للرؤية 🔒", callback_data=f"read:{whisper_id}"))
-    if bot_username:
-        from handlers._formatting import build_share_link
-        kb.add(InlineKeyboardButton("📤 اضغط للمشاركة", url=build_share_link(bot_username, whisper_id)))
     return kb
 
 
@@ -325,7 +322,7 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     else whisper_body
                 )
                 group_msg_targeted = f"هذه همسة سرية لـ {display_target} 🤫"
-                targeted_kb = _read_button(wid_targeted, bot_username)
+                targeted_kb = _read_button(wid_targeted)
                 results.append(
                     InlineQueryResultArticle(
                         id=f"custom:{wid_targeted}",
@@ -388,11 +385,8 @@ def register_inline_handlers(bot: telebot.TeleBot):
                         f"همسة لـ {target_label} 🔒",
                         url=f"tg://resolve?domain={bot_username}&start=view_{wid}",
                     ))
-                    if bot_username:
-                        from handlers._formatting import build_share_link
-                        btn_kb.add(InlineKeyboardButton("📤 اضغط للمشاركة", url=build_share_link(bot_username, wid)))
                 else:
-                    btn_kb = _read_button(wid, bot_username)
+                    btn_kb = _read_button(wid)
 
                 results.append(
                     InlineQueryResultArticle(
@@ -458,7 +452,7 @@ def register_inline_handlers(bot: telebot.TeleBot):
                 )
                 if chat_id_for_spam is not None:
                     record_whisper_timestamp(user.id, chat_id_for_spam)
-                btn_kb = _read_button(wid, bot_username)
+                btn_kb = _read_button(wid)
                 results.append(
                     InlineQueryResultArticle(
                         id=f"destructive:{wtype}:{wid}",
@@ -641,9 +635,6 @@ def _handle_wrapped_chosen(bot, result, hours):
 
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(InlineKeyboardButton("🔒 اضغط للرؤية", callback_data=f"read:{wid}"))
-    if bot_username:
-        from handlers._formatting import build_share_link
-        kb.add(InlineKeyboardButton("📤 اضغط للمشاركة", url=build_share_link(bot_username, wid)))
 
     logger.info("[WW] final_text prepared: wid=%s cover=%s char=%s text='%s'",
                 wid, cover_code, character_code, final_text.replace('\n', ' | '))
@@ -756,9 +747,6 @@ def _handle_media_chosen(bot, result):
 
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(InlineKeyboardButton("🔒 اضغط للرؤية", callback_data=f"read:{wid}"))
-    if bot_username:
-        from handlers._formatting import build_share_link
-        kb.add(InlineKeyboardButton("📤 اضغط للمشاركة", url=build_share_link(bot_username, wid)))
 
     imid = result.inline_message_id
     if imid:

@@ -49,9 +49,6 @@ def media_whisper_read_keyboard(whisper_id: str, bot_username: str = "") -> Inli
     if count_replies(whisper_id) > 0:
         from handlers.replies import conversation_button
         kb.add(conversation_button(whisper_id))
-    if bot_username:
-        from handlers._formatting import build_share_link
-        kb.add(InlineKeyboardButton("📤 اضغط للمشاركة", url=build_share_link(bot_username, whisper_id)))
     return kb
 
 

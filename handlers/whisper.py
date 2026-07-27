@@ -798,7 +798,7 @@ def _register_callback_handlers(bot, user_states):
 
             if w["whisper_type"] == "first_three":
                 _notify_sender_first_three_read(w)
-            if w["whisper_type"] not in ("first_one", "first_three", "everyone"):
+            if w["whisper_type"] not in ("first_one", "first_three", "everyone", "contact_whisper"):
                 logger.debug("[NOTIFY] calling _notify_sender_reader_name type=%s reader_count=%d whisper_id=%s",
                              w["whisper_type"], reader_count_val, whisper_id)
                 _notify_sender_reader_name(w, reader_count_val)
@@ -809,8 +809,11 @@ def _register_callback_handlers(bot, user_states):
             if w["whisper_type"] == "everyone":
                 return
 
-        # first_one and first_three: NO notifications to sender
-        if w["whisper_type"] not in ("first_one", "first_three"):
+        logger.info(
+            "[READ_NOTIFY] whisper_type=%s sender_id=%s reader_id=%s is_new_read=%s",
+            w["whisper_type"], w["sender_id"], user.id, is_new_read,
+        )
+        if w["whisper_type"] not in ("first_three",):
             if _notify_sender_first_one(w, is_first_ever):
                 return
             _send_read_receipt(w, is_new_read)

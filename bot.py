@@ -304,7 +304,6 @@ def start_cmd(msg: telebot.types.Message):
 
         # ── Build whisper info card (metadata only, no content) ──────
         from database import get_user
-        from handlers._formatting import build_share_link
 
         def _escape_md(text: str) -> str:
             for ch in r'_*[]()~`>#+-=|{}.!':
@@ -345,14 +344,9 @@ def start_cmd(msg: telebot.types.Message):
         if w_dict.get("is_destructive"):
             card += "💣 *همسة تدميرية* (تُحذف بعد القراءة)\n"
 
-        me = _get_bot_me(bot)
-        bot_username = me.username if me else ""
-        share_url = build_share_link(bot_username, whisper_id_payload)
-
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(
             InlineKeyboardButton("🔒 اضغط للرؤية", callback_data=f"read:{whisper_id_payload}"),
-            InlineKeyboardButton("📤 اضغط للمشاركة", url=share_url),
         )
 
         bot.send_message(msg.chat.id, card, parse_mode="MarkdownV2", reply_markup=kb)
