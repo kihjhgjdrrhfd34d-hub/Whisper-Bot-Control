@@ -606,6 +606,12 @@ def can_read_whisper(whisper_id, user_id):
     if not w:
         return False, "not_found"
     w = dict(w)
+    logger.warning(
+        "[PG_ACCESS_DEBUG] whisper_id=%s user_id=%s wtype=%s",
+        whisper_id,
+        user_id,
+        w.get("whisper_type") if w else None
+    )
     if w.get("is_closed", 0):
         return False, "locked"
 
@@ -648,6 +654,13 @@ def can_read_whisper(whisper_id, user_id):
             return True, "allowed"
         return False, "taken"
 
+    logger.error(
+        "[PG_UNKNOWN_DEBUG] whisper_id=%s user_id=%s wtype=%s keys=%s",
+        whisper_id,
+        user_id,
+        wtype,
+        list(w.keys()) if w else None
+    )
     return False, "unknown"
 
 
