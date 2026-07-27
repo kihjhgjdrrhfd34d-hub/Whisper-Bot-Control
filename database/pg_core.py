@@ -638,6 +638,16 @@ def can_read_whisper(whisper_id, user_id):
             return True, "allowed"
         return False, "not_target"
 
+    if wtype == "contact_whisper":
+        if w["sender_id"] == user_id:
+            return True, "sender"
+        if w["is_locked"]:
+            return False, "locked"
+        readers = get_readers(whisper_id)
+        if len(readers) == 0 or any(r["user_id"] == user_id for r in readers):
+            return True, "allowed"
+        return False, "taken"
+
     return False, "unknown"
 
 
