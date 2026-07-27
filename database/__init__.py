@@ -493,9 +493,10 @@ def create_whisper(
 
 def get_whisper(whisper_id):
     with get_conn() as conn:
-        return conn.execute(
+        row = conn.execute(
             "SELECT * FROM whispers WHERE whisper_id=?", (whisper_id,)
         ).fetchone()
+    return row
 
 
 def update_whisper_content(whisper_id, content):
@@ -764,6 +765,7 @@ def can_read_whisper(whisper_id, user_id):
         if w["is_locked"]:
             return False, "locked"
         readers = get_readers(whisper_id)
+        reader_ids = [r["user_id"] for r in readers]
         if len(readers) == 0 or any(r["user_id"] == user_id for r in readers):
             return True, "allowed"
         return False, "taken"

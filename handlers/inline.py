@@ -21,7 +21,7 @@ from database.wrapped_whispers import (
 )
 from handlers.dashboard import send_dashboard
 from handlers.media_wizard import (
-    FOUR_OPTIONS, DESTRUCTIVE_OPTIONS,
+    FOUR_OPTIONS, DESTRUCTIVE_OPTIONS, CONTACT_OPTION,
     build_media_whisper_inline_results, _auto_hours,
 )
 
@@ -64,6 +64,9 @@ CONTROL_PANEL_TYPES = {"custom"}
 def _read_button(whisper_id: str, bot_username: str = "") -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(InlineKeyboardButton("اضغط للرؤية 🔒", callback_data=f"read:{whisper_id}"))
+    if bot_username:
+        from handlers._formatting import build_share_link
+        kb.add(InlineKeyboardButton("📤 اضغط للمشاركة", url=build_share_link(bot_username, whisper_id)))
     return kb
 
 
@@ -385,6 +388,9 @@ def register_inline_handlers(bot: telebot.TeleBot):
                         f"همسة لـ {target_label} 🔒",
                         url=f"tg://resolve?domain={bot_username}&start=view_{wid}",
                     ))
+                    if bot_username:
+                        from handlers._formatting import build_share_link
+                        btn_kb.add(InlineKeyboardButton("📤 اضغط للمشاركة", url=build_share_link(bot_username, wid)))
                 else:
                     btn_kb = _read_button(wid, bot_username)
 
@@ -405,6 +411,22 @@ def register_inline_handlers(bot: telebot.TeleBot):
                 )
             except Exception as e:
                 logger.error(f"inline build [{wtype}]: {e}")
+
+        # ── Contact whisper option (always available) ────────────────────
+        wtype, max_r, title, desc, group_text = CONTACT_OPTION
+        contact_kb = InlineKeyboardMarkup(row_width=1)
+        contact_kb.add(InlineKeyboardButton("📩 بوت التواصل", callback_data="noop"))
+        results.append(
+            InlineQueryResultArticle(
+                id=f"contact:{wtype}",
+                title=title,
+                description=desc,
+                input_message_content=InputTextMessageContent(
+                    message_text=group_text,
+                ),
+                reply_markup=contact_kb,
+            )
+        )
 
         # ── Error result when public whispers are disabled ────────────────
         if not chat_public_allowed and raw:
@@ -476,6 +498,11 @@ def register_inline_handlers(bot: telebot.TeleBot):
         # ── Media whisper: create whisper from pending ────────────────────
         if result_id.startswith("media:"):
             _handle_media_chosen(bot, result)
+            return
+
+        # ── Contact whisper: save as pending (no group publish) ──────────
+        if result_id.startswith("contact:"):
+            _handle_contact_chosen(bot, result)
             return
 
         # ── Detect destructive prefix ────────────────────────────────────
@@ -614,6 +641,9 @@ def _handle_wrapped_chosen(bot, result, hours):
 
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(InlineKeyboardButton("🔒 اضغط للرؤية", callback_data=f"read:{wid}"))
+    if bot_username:
+        from handlers._formatting import build_share_link
+        kb.add(InlineKeyboardButton("📤 اضغط للمشاركة", url=build_share_link(bot_username, wid)))
 
     logger.info("[WW] final_text prepared: wid=%s cover=%s char=%s text='%s'",
                 wid, cover_code, character_code, final_text.replace('\n', ' | '))
@@ -718,8 +748,17 @@ def _handle_media_chosen(bot, result):
         location_lon=location_lon,
     )
 
+    bot_username = ""
+    try:
+        bot_username = bot.get_me().username
+    except Exception:
+        pass
+
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(InlineKeyboardButton("🔒 اضغط للرؤية", callback_data=f"read:{wid}"))
+    if bot_username:
+        from handlers._formatting import build_share_link
+        kb.add(InlineKeyboardButton("📤 اضغط للمشاركة", url=build_share_link(bot_username, wid)))
 
     imid = result.inline_message_id
     if imid:
@@ -751,3 +790,69 @@ def _handle_media_chosen(bot, result):
         logger.warning("[MEDIA] send_dashboard failed: %s", exc)
 
     logger.info("[MEDIA] whisper created wid=%s wtype=%s destructive=%s pending_id=%s", wid, wtype, is_destructive, pending_id)
+
+
+def _handle_contact_chosen(bot, result):
+    user = result.from_user
+    result_id = result.result_id
+
+    parts = result_id.split(":", 1)
+    wtype = parts[1] if len(parts) > 1 else "first_one"
+
+    content = (result.query or "").strip()
+    if not content:
+        logger.warning("[CONTACT] empty content from user=%s", user.id)
+        return
+
+    wid = create_whisper(
+        sender_id=user.id,
+        content=content,
+        whisper_type="contact_whisper",
+        target_users=[],
+        max_readers=1,
+    )
+
+    bot_username = ""
+    try:
+        bot_username = bot.get_me().username
+    except Exception:
+        pass
+
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("🔒 اضغط للرؤية", callback_data=f"read:{wid}"),
+    )
+    if bot_username:
+        from handlers._formatting import build_share_link
+        kb.add(
+            InlineKeyboardButton(
+                "📤 اضغط للمشاركة",
+                url=build_share_link(bot_username, wid),
+            ),
+        )
+
+    imid = result.inline_message_id
+    if imid:
+        try:
+            bot.edit_message_reply_markup(
+                inline_message_id=imid,
+                reply_markup=kb,
+            )
+        except Exception as exc:
+            logger.warning("[CONTACT] edit reply markup failed wid=%s: %s", wid, exc)
+    else:
+        logger.warning("[CONTACT] inline_message_id is None — wid=%s", wid)
+
+    if imid:
+        try:
+            update_whisper_group_message(wid, inline_message_id=imid)
+        except Exception as exc:
+            logger.warning("[CONTACT] store inline_message_id failed: %s", exc)
+
+    try:
+        from handlers.dashboard import send_dashboard
+        send_dashboard(bot, user.id, wid)
+    except Exception as exc:
+        logger.warning("[CONTACT] send_dashboard failed: %s", exc)
+
+    logger.info("[CONTACT] contact whisper created wid=%s wtype=%s", wid, wtype)

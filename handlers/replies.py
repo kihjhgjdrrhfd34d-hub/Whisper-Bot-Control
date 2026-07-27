@@ -107,6 +107,9 @@ def whisper_read_keyboard(whisper_id: str, bot_username: str = "") -> InlineKeyb
         kb.add(InlineKeyboardButton("↩️ رد", callback_data=f"{_REPLY_WHISPER_PREFIX}{whisper_id}"))
     if count_replies(whisper_id) > 0:
         kb.add(conversation_button(whisper_id))
+    if bot_username:
+        from handlers._formatting import build_share_link
+        kb.add(InlineKeyboardButton("📤 اضغط للمشاركة", url=build_share_link(bot_username, whisper_id)))
     return kb
 
 

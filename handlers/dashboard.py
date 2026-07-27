@@ -266,7 +266,7 @@ def send_dashboard(bot: telebot.TeleBot, user_id: int, whisper_id: str) -> None:
     text = _build_dashboard_text(w)
     kb = dashboard_keyboard(whisper_id)
     try:
-        bot.send_message(user_id, text, parse_mode="Markdown", reply_markup=kb)
+        bot.send_message(user_id, text, reply_markup=kb)
     except Exception as exc:
         logger.error(f"send_dashboard failed for {user_id}: {exc}")
 

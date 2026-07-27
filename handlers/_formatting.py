@@ -13,6 +13,12 @@ def _fmt_username(username: str) -> str:
     return f"@{username.replace('_', '\\_')}"
 
 
+def build_share_link(bot_username: str, whisper_id: str) -> str:
+    import urllib.parse
+    whisper_link = f"https://t.me/{bot_username}?start={whisper_id}"
+    return f"https://t.me/share/url?url={urllib.parse.quote(whisper_link, safe='')}"
+
+
 def _get_sender_display(user_id: int) -> str:
     u = get_user(user_id)
     if not u:

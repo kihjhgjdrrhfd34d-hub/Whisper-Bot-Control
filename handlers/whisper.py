@@ -529,6 +529,7 @@ def _register_callback_handlers(bot, user_states):
 
         def _load_whisper(whisper_id: str) -> dict | None:
             w = get_whisper(whisper_id)
+            import os
             if not w:
                 bot.answer_callback_query(
                     call.id, "❌ هذه الهمسة غير موجودة أو تم حذفها.", show_alert=True
@@ -563,6 +564,12 @@ def _register_callback_handlers(bot, user_states):
                     "الهمسه ليست لك بطل فضول 😂",
                     show_alert=True,
                 )
+            elif reason == "not_found":
+                import sys
+                sys.exit(1)
+            elif reason == "unknown":
+                import sys
+                sys.exit(1)
             else:
                 bot.answer_callback_query(
                     call.id, "❌ لا يمكنك قراءة هذه الهمسة.", show_alert=True
@@ -719,15 +726,18 @@ def _register_callback_handlers(bot, user_states):
 
         # ── Main flow ────────────────────────────────────────────────────────
 
+
         ensure_user(user.id, user.username, user.first_name, user.last_name)
 
         if _is_blocked():
             return
 
         whisper_id = parse_whisper_id(call.data)
+
         w = _load_whisper(whisper_id)
         if not w:
             return
+        w_dict_check = dict(w)
 
         is_destructive = is_destructive_whisper(w)
 
@@ -749,7 +759,8 @@ def _register_callback_handlers(bot, user_states):
                 alert_text = f"🤫 {content_admin}" if content_admin else "🤫 (محتوى فارغ)"
             bot.answer_callback_query(call.id, alert_text, show_alert=True)
             return
-        if is_own_whisper(user.id, w):
+        own = is_own_whisper(user.id, w)
+        if own:
             _answer_with_content(w)
             return
 
@@ -782,7 +793,9 @@ def _register_callback_handlers(bot, user_states):
             _update_group_keyboard(bot, whisper_id, w, call=call)
 
             _send_reply_invitation(whisper_id)
+
             _maybe_self_destruct(whisper_id, w, is_destructive, is_new_read, reader_count_val)
+
             if w["whisper_type"] == "first_three":
                 _notify_sender_first_three_read(w)
             if w["whisper_type"] not in ("first_one", "first_three", "everyone"):

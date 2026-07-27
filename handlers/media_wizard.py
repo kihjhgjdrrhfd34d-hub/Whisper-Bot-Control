@@ -70,6 +70,12 @@ DESTRUCTIVE_OPTIONS = [
     ("everyone",    0, "💣 همسة تدميرية للجميع",        "💥 تظهر كتنبيه ولا تتكرر",  "💣 همسة تدميرية للجميع"),
 ]
 
+CONTACT_OPTION = (
+    "first_one", 1, "📩 همسة لبوت التواصل",
+    "تُرسل إلى بوت التواصل مباشرة",
+    "📩 همسة من بوت التواصل 🤫",
+)
+
 
 def build_media_whisper_inline_results(pending, bot_username, hours):
     """
