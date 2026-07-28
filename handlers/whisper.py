@@ -4,7 +4,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from handlers.keyboard_utils import confirm_button, cancel_button
 from database import (
-    get_whisper, can_read_whisper, add_reader_if_new,
+    get_whisper, get_user, can_read_whisper, add_reader_if_new,
     add_curious,
     toggle_whisper_lock, lock_whisper, delete_whisper, clear_whisper_readers,
     get_readers, get_curious_ones,
@@ -673,6 +673,53 @@ def _register_callback_handlers(bot, user_states):
         def _send_reply_invitation(wid: str):
             """Send a private DM to the reader with a reply button."""
             try:
+                w = get_whisper(wid)
+                if not w:
+                    return
+
+                sender = get_user(w["sender_id"])
+                if sender:
+                    first = (sender["first_name"] or "").strip()
+                    last = (sender["last_name"] or "").strip()
+                    sender_name = " ".join(filter(None, [first, last])).strip()
+                    if not sender_name:
+                        sender_name = f"@{sender['username']}" if sender.get("username") else "شخص"
+                else:
+                    sender_name = "شخص"
+
+                content_text = w.get("content") or ""
+                if not content_text and w.get("message_type"):
+                    mt_label = {
+                        "photo": "🖼 صورة",
+                        "video": "🎬 فيديو",
+                        "voice": "🎤 تسجيل صوتي",
+                        "audio": "🎵 ملف صوتي",
+                        "document": "📄 مستند",
+                        "location": "📍 موقع",
+                        "animation": "🎞 متحركة",
+                    }.get(w["message_type"], w["message_type"])
+                    caption = w.get("caption") or ""
+                    content_text = mt_label
+                    if caption:
+                        content_text += f"\n{caption}"
+
+                wtype_label = {
+                    "first_one": "همسة لأول شخص",
+                    "first_three": "همسة لأول 3 أشخاص",
+                    "everyone": "همسة للجميع",
+                    "contact_whisper": "همسة تواصل",
+                }.get(w.get("whisper_type", ""), w.get("whisper_type", ""))
+
+                msg_text = (
+                    f"💌 همسة جديدة للرد\n\n"
+                    f"🏷 النوع:\n{wtype_label}\n\n"
+                    f"👤 المرسل:\n{sender_name}\n\n"
+                    f"📝 الهمسة:\n{content_text}\n\n"
+                    f"────────────\n\n"
+                    f"✨ هل أعجبتك الهمسة؟\n\n"
+                    f"يمكنك إرسال ردك لصاحب الهمسة من الزر أدناه 💬"
+                )
+
                 _kb = InlineKeyboardMarkup(row_width=1)
                 _kb.add(InlineKeyboardButton(
                     "💬 الرد على الهمسة",
@@ -680,8 +727,7 @@ def _register_callback_handlers(bot, user_states):
                 ))
                 bot.send_message(
                     user.id,
-                    "💌 انتهيت من قراءة الهمسة.\n\n"
-                    "إذا رغبت، يمكنك إرسال رد إلى صاحبها.",
+                    msg_text,
                     reply_markup=_kb,
                 )
             except Exception as exc:
