@@ -511,8 +511,6 @@ def _register_callback_handlers(bot, user_states):
     @bot.callback_query_handler(func=lambda c: c.data.startswith("read:"))
     def handle_read(call: telebot.types.CallbackQuery):
         user = call.from_user
-        logger.info("[DIAG] handle_read ENTER callback_data=%s user_id=%s", call.data, user.id)
-
         # ── Helpers (TeleBot-dependent — stay in handler) ────────────────
 
         def _is_blocked() -> bool:
@@ -779,25 +777,16 @@ def _register_callback_handlers(bot, user_states):
 
 
         ensure_user(user.id, user.username, user.first_name, user.last_name)
-        logger.info("[DIAG] Step 1 ensure_user done user_id=%s", user.id)
-
         if _is_blocked():
-            logger.info("[DIAG] Step 2 _is_blocked True — returning")
             return
-        logger.info("[DIAG] Step 2 _is_blocked passed")
 
         whisper_id = parse_whisper_id(call.data)
-        logger.info("[DIAG] Step 3 parse_whisper_id=%s", whisper_id)
-
         w = _load_whisper(whisper_id)
         if not w:
-            logger.info("[DIAG] Step 4 _load_whisper returned None — returning")
             return
         w_dict_check = dict(w)
-        logger.info("[DIAG] Step 4 _load_whisper OK type=%s", w["whisper_type"])
 
         is_destructive = is_destructive_whisper(w)
-        logger.info("[DIAG] Step 5 is_destructive=%s", is_destructive)
 
         # ── Admins & sender: view content without being counted ──────
         from config import ADMIN_IDS
@@ -816,33 +805,24 @@ def _register_callback_handlers(bot, user_states):
             else:
                 alert_text = f"🤫 {content_admin}" if content_admin else "🤫 (محتوى فارغ)"
             bot.answer_callback_query(call.id, alert_text, show_alert=True)
-            logger.info("[DIAG] Step 6 admin view — returning")
             return
         own = is_own_whisper(user.id, w)
         if own:
             _answer_with_content(w)
-            logger.info("[DIAG] Step 7 own whisper — returning")
             return
-        logger.info("[DIAG] Step 6-7 not admin, not own")
 
         if not _check_access(whisper_id, w):
-            logger.info("[DIAG] Step 8 _check_access denied — returning")
             return
-        logger.info("[DIAG] Step 8 _check_access allowed")
 
         if _handle_destructive_everyone(whisper_id, w, is_destructive):
-            logger.info("[DIAG] Step 9 handled as destructive everyone — returning")
             return
-        logger.info("[DIAG] Step 9 not destructive everyone")
 
         _answer_with_content(w)
-        logger.info("[DIAG] Step 10 _answer_with_content done")
 
         if w["whisper_type"] == "first_three":
             logger.info("[READ] type=first_three whisper_id=%s", whisper_id)
 
         is_new_read, is_first_ever = record_read_and_check(whisper_id, user.id)
-        logger.info("[DIAG] Step 11 record_read_and_check done is_new_read=%s is_first_ever=%s", is_new_read, is_first_ever)
         logger.log(
             logging.DEBUG if is_new_read else logging.WARNING,
             "[FLOW] is_new_read=%s is_first_ever=%s type=%s whisper_id=%s",
@@ -851,65 +831,39 @@ def _register_callback_handlers(bot, user_states):
 
         if is_new_read:
             readers = get_readers(whisper_id)
-            logger.info("[DIAG] Step 12 get_readers count=%d", len(readers))
             logger.info("[DB] readers_count=%d type=%s whisper_id=%s",
                         len(readers), w["whisper_type"], whisper_id)
             logger.info("[UI] readers sent=%d readers=%s whisper_id=%s",
                         len(readers), [r.get("first_name", r.get("user_id")) for r in readers], whisper_id)
             reader_count_val = len(readers)
 
-            logger.info("[DIAG] Step 13 before _update_group_keyboard")
             _update_group_keyboard(bot, whisper_id, w, call=call)
-            logger.info("[DIAG] Step 13 after _update_group_keyboard")
 
-            logger.info("[DIAG] Step 14 before _send_reply_invitation")
             _send_reply_invitation(whisper_id)
-            logger.info("[DIAG] Step 14 after _send_reply_invitation")
 
-            logger.info("[DIAG] Step 15 before _maybe_self_destruct")
             _maybe_self_destruct(whisper_id, w, is_destructive, is_new_read, reader_count_val)
-            logger.info("[DIAG] Step 15 after _maybe_self_destruct")
 
             if w["whisper_type"] == "first_three":
                 _notify_sender_first_three_read(w)
-                logger.info("[DIAG] Step 16 _notify_sender_first_three_read done")
             if w["whisper_type"] not in ("first_one", "first_three", "everyone", "contact_whisper"):
-                logger.info("[DIAG] Step 16 before _notify_sender_reader_name type=%s", w["whisper_type"])
                 logger.debug("[NOTIFY] calling _notify_sender_reader_name type=%s reader_count=%d whisper_id=%s",
                              w["whisper_type"], reader_count_val, whisper_id)
                 _notify_sender_reader_name(w, reader_count_val)
                 logger.debug("[NOTIFY] _notify_sender_reader_name completed whisper_id=%s", whisper_id)
-                logger.info("[DIAG] Step 16 after _notify_sender_reader_name")
-            else:
-                logger.info("[DIAG] Step 16 skip _notify_sender_reader_name type=%s", w["whisper_type"])
 
             if w["whisper_type"] == "everyone":
-                logger.info("[DIAG] Step 17 before _notify_sender_read (everyone)")
                 _notify_sender_read(w)
-                logger.info("[DIAG] Step 17 after _notify_sender_read")
             if w["whisper_type"] == "everyone":
-                logger.info("[DIAG] everyone type — returning after read")
                 return
 
-        logger.info(
-            "[DIAG] Step 18 is_new_read=%s type=%s — before post-read notifications",
-            is_new_read, w["whisper_type"],
-        )
         logger.info(
             "[READ_NOTIFY] whisper_type=%s sender_id=%s reader_id=%s is_new_read=%s",
             w["whisper_type"], w["sender_id"], user.id, is_new_read,
         )
         if w["whisper_type"] not in ("first_three",):
-            logger.info("[DIAG] Step 19 before _notify_sender_first_one")
             if _notify_sender_first_one(w, is_first_ever):
-                logger.info("[DIAG] Step 19 _notify_sender_first_one returned True — returning")
                 return
-            logger.info("[DIAG] Step 19 _notify_sender_first_one skipped (type=%s)", w["whisper_type"])
-            logger.info("[DIAG] Step 20 before _send_read_receipt is_new_read=%s", is_new_read)
             _send_read_receipt(w, is_new_read)
-            logger.info("[DIAG] Step 20 after _send_read_receipt — handle_read END")
-        else:
-            logger.info("[DIAG] Step 19-20 skip (type=first_three) — handle_read END")
 
     # ─── Lock / unlock ───────────────────────────────────────────────────────
     @bot.callback_query_handler(func=lambda c: c.data.startswith("lock:"))

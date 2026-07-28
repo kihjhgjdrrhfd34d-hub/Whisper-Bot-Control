@@ -654,13 +654,6 @@ def can_read_whisper(whisper_id, user_id):
             return True, "allowed"
         return False, "taken"
 
-    logger.error(
-        "[PG_UNKNOWN_DEBUG] whisper_id=%s user_id=%s wtype=%s keys=%s",
-        whisper_id,
-        user_id,
-        wtype,
-        list(w.keys()) if w else None
-    )
     return False, "unknown"
 
 
