@@ -674,6 +674,7 @@ def _register_callback_handlers(bot, user_states):
                 w = get_whisper(wid)
                 if not w:
                     return
+                w = dict(w)
 
                 sender = get_user(w["sender_id"])
                 if sender:
