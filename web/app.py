@@ -29,8 +29,19 @@ logger = logging.getLogger(__name__)
 
 WEB_PORT  = int(os.getenv("WEB_PORT", "8081"))
 WEB_USER  = os.getenv("WEB_USER", "admin")
-WEB_PASS  = os.getenv("WEB_PASS", "whisper_admin")
-SECRET_KEY = os.getenv("FLASK_SECRET", "whisper_secret_key_change_me")
+WEB_PASS = os.getenv("WEB_PASS")
+if WEB_PASS is None:
+    raise RuntimeError(
+        "WEB_PASS environment variable is not set. "
+        "Please define it before starting the web dashboard."
+    )
+
+SECRET_KEY = os.getenv("FLASK_SECRET")
+if SECRET_KEY is None:
+    raise RuntimeError(
+        "FLASK_SECRET environment variable is not set. "
+        "Please define it before starting the web dashboard."
+    )
 
 web_app = Flask(__name__, template_folder="templates")
 web_app.secret_key = SECRET_KEY
