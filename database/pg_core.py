@@ -534,30 +534,58 @@ def add_reader_if_new(whisper_id: str, user_id: int) -> bool:
 
 
 def record_whisper_read(whisper_id: str, user_id: int) -> bool:
-    is_new = add_reader_if_new(whisper_id, user_id)
-    if not is_new:
-        return False
+    with get_conn() as conn:
+        w = conn.execute(
+            "SELECT whisper_type FROM whispers WHERE whisper_id=%s",
+            (whisper_id,),
+        ).fetchone()
+        wtype = w["whisper_type"] if w else None
 
-    w = get_whisper(whisper_id)
-    if not w:
-        return True
+        if wtype == "first_three":
+            cur = conn.execute(
+                "INSERT INTO whisper_readers (whisper_id, user_id) "
+                "SELECT %s, %s "
+                "WHERE (SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=%s) < 3",
+                (whisper_id, user_id, whisper_id),
+            )
+            inserted = cur.rowcount
+            if not inserted:
+                conn.commit()
+                return False
 
-    wtype = w["whisper_type"]
-    if wtype == "everyone":
-        return True
-
-    if wtype == "first_three":
-        count = reader_count(whisper_id)
-        if count >= 3:
-            with get_conn() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=%s",
+                (whisper_id,),
+            ).fetchone()[0]
+            if count >= 3:
                 conn.execute(
                     "UPDATE whispers SET is_locked=1 WHERE whisper_id=%s",
                     (whisper_id,),
                 )
+        elif wtype == "first_one":
+            cur = conn.execute(
+                "INSERT INTO whisper_readers (whisper_id, user_id) "
+                "SELECT %s, %s "
+                "WHERE (SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=%s) < 1",
+                (whisper_id, user_id, whisper_id),
+            )
+            inserted = cur.rowcount
+            if not inserted:
                 conn.commit()
-        return True
+                return False
+        else:
+            cur = conn.execute(
+                "INSERT INTO whisper_readers (whisper_id, user_id) VALUES (%s, %s)"
+                " ON CONFLICT (whisper_id, user_id) DO NOTHING",
+                (whisper_id, user_id),
+            )
+            inserted = cur.rowcount
+            if not inserted:
+                conn.commit()
+                return False
 
-    return True
+        conn.commit()
+        return True
 
 
 def get_readers(whisper_id):

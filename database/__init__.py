@@ -671,34 +671,67 @@ def record_whisper_read(whisper_id: str, user_id: int) -> bool:
 
     Returns:
         True  — first time this user reads this whisper.
-        False — user already read it before.
+        False — user already read it before or the whisper is locked/full.
+
+    Atomicity
+    ---------
+    The entire operation (insert + type check + conditional lock) runs within
+    a *single* connection/transaction.  For ``first_three`` the insert is a
+    conditional ``INSERT … SELECT … WHERE count < 3`` so that even concurrent
+    requests cannot exceed the reader limit.
     """
-    is_new = add_reader_if_new(whisper_id, user_id)
-    if not is_new:
-        return False
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        w = conn.execute(
+            "SELECT whisper_type FROM whispers WHERE whisper_id=?",
+            (whisper_id,),
+        ).fetchone()
+        wtype = w["whisper_type"] if w else None
 
-    w = get_whisper(whisper_id)
-    if not w:
-        return True
+        if wtype == "first_three":
+            conn.execute(
+                "INSERT INTO whisper_readers (whisper_id, user_id) "
+                "SELECT ?, ? "
+                "WHERE (SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=?) < 3",
+                (whisper_id, user_id, whisper_id),
+            )
+            inserted = conn.execute("SELECT changes()").fetchone()[0]
+            if not inserted:
+                conn.commit()
+                return False
 
-    wtype = w["whisper_type"]
-    if wtype == "everyone":
-        # ── NEVER lock an "everyone" whisper ──────────────────────────────
-        return True
-
-    if wtype == "first_three":
-        count = reader_count(whisper_id)
-        if count >= 3:
-            with get_conn() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=?",
+                (whisper_id,),
+            ).fetchone()[0]
+            if count >= 3:
                 conn.execute(
                     "UPDATE whispers SET is_locked=1 WHERE whisper_id=?",
                     (whisper_id,),
                 )
+        elif wtype == "first_one":
+            conn.execute(
+                "INSERT INTO whisper_readers (whisper_id, user_id) "
+                "SELECT ?, ? "
+                "WHERE (SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=?) < 1",
+                (whisper_id, user_id, whisper_id),
+            )
+            inserted = conn.execute("SELECT changes()").fetchone()[0]
+            if not inserted:
                 conn.commit()
-        return True
+                return False
+        else:
+            conn.execute(
+                "INSERT OR IGNORE INTO whisper_readers (whisper_id, user_id) VALUES (?, ?)",
+                (whisper_id, user_id),
+            )
+            inserted = conn.execute("SELECT changes()").fetchone()[0]
+            if not inserted:
+                conn.commit()
+                return False
 
-    # first_one, custom — no auto-lock (can_read_whisper gates access)
-    return True
+        conn.commit()
+        return True
 
 
 def get_readers(whisper_id):

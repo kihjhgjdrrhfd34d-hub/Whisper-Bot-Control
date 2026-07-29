@@ -818,12 +818,13 @@ def _register_callback_handlers(bot, user_states):
         if _handle_destructive_everyone(whisper_id, w, is_destructive):
             return
 
-        _answer_with_content(w)
-
         if w["whisper_type"] == "first_three":
             logger.info("[READ] type=first_three whisper_id=%s", whisper_id)
 
         is_new_read, is_first_ever = record_read_and_check(whisper_id, user.id)
+
+        if is_new_read:
+            _answer_with_content(w)
         logger.log(
             logging.DEBUG if is_new_read else logging.WARNING,
             "[FLOW] is_new_read=%s is_first_ever=%s type=%s whisper_id=%s",
