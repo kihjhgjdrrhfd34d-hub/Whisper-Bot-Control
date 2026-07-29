@@ -335,7 +335,7 @@ def handle_reply_message(
         delivery_ok = _route_reply(bot, msg, reply_id, whisper_id, user.id, w,
                                    content, media_type, file_id, parent_reply_id)
     except Exception as exc:
-        print(f"DEBUG: _route_reply exception: {exc}")
+        logger.debug(f"_route_reply exception: {exc}")
         logger.error(f"unhandled exception in _route_reply: {exc}", exc_info=True)
 
     # ── تأكيد إرسال الرد للقارئ ────────────────────────────────
@@ -494,7 +494,7 @@ def _route_reply(
             )
             success = True
         except Exception as exc:
-            print(f"DEBUG: Telegram API Error: {exc}")
+            logger.debug(f"Telegram API Error: {exc}")
             logger.error(
                 f"reply delivery failed whisper={whisper_id!r} "
                 f"recipient={recipient_id} reply={reply_id!r}: {exc}"
@@ -513,9 +513,9 @@ def _deliver_reply(
     kb: InlineKeyboardMarkup,
 ) -> None:
     """إرسال محتوى الرد إلى مستلم واحد مع هوية المرسل."""
-    print(f"DEBUG: Trying to send to sender_id: {recipient_id} | Type: {type(recipient_id)}")
+    logger.debug(f"Trying to send to sender_id: {recipient_id} | Type: {type(recipient_id)}")
     if recipient_id is None:
-        print("DEBUG: recipient_id is None, cannot send")
+        logger.debug("recipient_id is None, cannot send")
         return
     if media_type == "photo":
         caption = (header + content)[:1024] if content else header.rstrip()
