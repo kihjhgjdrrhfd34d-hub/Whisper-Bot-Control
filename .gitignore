@@ -28,3 +28,6 @@ backups/
 .DS_Store
 .venv/
 .aider*
+.env
+.env.*
+!.env.example
