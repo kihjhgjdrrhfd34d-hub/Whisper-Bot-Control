@@ -18,7 +18,7 @@ from database.postgres import get_conn, USE_POSTGRES
 
 logger = logging.getLogger(__name__)
 
-ENTERPRISE_SCHEMA_VERSION = 3
+ENTERPRISE_SCHEMA_VERSION = 4
 
 
 def get_schema_version() -> int:
@@ -608,13 +608,13 @@ def expire_temp_bans() -> int:
 def save_favorite(user_id: int, whisper_id: str) -> bool:
     try:
         with get_conn() as conn:
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO whisper_favorites (user_id, whisper_id) VALUES (%s,%s)"
                 " ON CONFLICT (user_id, whisper_id) DO NOTHING",
                 (user_id, whisper_id),
             )
             conn.commit()
-        return True
+        return cur.rowcount == 1
     except Exception:
         return False
 
@@ -666,13 +666,13 @@ def has_user_liked(user_id: int, whisper_id: str) -> bool:
 def save_dislike(user_id: int, whisper_id: str) -> bool:
     try:
         with get_conn() as conn:
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO whisper_dislikes (user_id, whisper_id) VALUES (%s,%s)"
                 " ON CONFLICT (user_id, whisper_id) DO NOTHING",
                 (user_id, whisper_id),
             )
             conn.commit()
-        return True
+        return cur.rowcount == 1
     except Exception:
         return False
 
@@ -859,8 +859,7 @@ MAX_BACKUPS = 10
 def create_backup(created_by: Optional[int] = None, notes: str = "") -> str:
     from core.events import event_bus
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"whispers_backup_{ts}.db"
-    logger.warning("PostgreSQL mode: backup uses pg_dump if available, otherwise skipped.")
+    filename = f"whispers_backup_{ts}.dump"
     dest = BACKUPS_DIR / filename
     import shutil
     from config import DATABASE_PATH
@@ -871,18 +870,20 @@ def create_backup(created_by: Optional[int] = None, notes: str = "") -> str:
         import subprocess
         try:
             result = subprocess.run(
-                [pg_dump_path, "--no-owner", "--no-acl", "-f", str(dest), DATABASE_URL],
+                [pg_dump_path, "-Fc", "--no-owner", "--no-acl", "-f", str(dest), DATABASE_URL],
                 capture_output=True, text=True, timeout=60
             )
             if result.returncode != 0:
-                logger.error(f"pg_dump failed: {result.stderr}")
-                raise RuntimeError("pg_dump failed")
+                msg = f"pg_dump failed with exit code {result.returncode}: {result.stderr}"
+                logger.error(msg)
+                raise RuntimeError(msg)
         except Exception as exc:
-            logger.warning(f"pg_dump backup failed, falling back to placeholder: {exc}")
-            dest.write_text(json.dumps({"note": "PostgreSQL backup placeholder"}))
+            logger.error(f"pg_dump backup failed: {exc}")
+            raise RuntimeError(f"Backup creation failed: {exc}") from exc
     else:
-        logger.info("PostgreSQL backup: pg_dump not found, creating placeholder.")
-        dest.write_text(json.dumps({"note": "PostgreSQL backup placeholder"}))
+        reason = "pg_dump not found" if not pg_dump_path else "PostgreSQL mode not active"
+        logger.error(f"Cannot create backup: {reason}")
+        raise RuntimeError(f"Cannot create backup: {reason}")
 
     size = dest.stat().st_size
     with get_conn() as conn:

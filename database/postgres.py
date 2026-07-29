@@ -6,12 +6,14 @@ DATABASE_URL from config, or None if PostgreSQL is not configured.
 """
 
 import os
+import atexit
 import re
 import logging
 from contextlib import contextmanager
 from typing import Optional
 
 import psycopg2
+import psycopg2.pool
 import psycopg2.extras
 from config import DATABASE_URL
 
@@ -19,6 +21,27 @@ logger = logging.getLogger(__name__)
 
 # ── Detect if PostgreSQL mode should be active ──────────────────────────
 USE_POSTGRES = bool(DATABASE_URL.strip())
+
+# ── Connection pool ─────────────────────────────────────────────────────
+_pool = None
+POOL_MIN = 2
+POOL_MAX = 10
+
+
+def _get_pool():
+    global _pool
+    if _pool is None:
+        dsn = _parse_url()
+        _pool = psycopg2.pool.ThreadedConnectionPool(POOL_MIN, POOL_MAX, dsn)
+        atexit.register(_close_pool)
+    return _pool
+
+
+def _close_pool():
+    global _pool
+    if _pool is not None:
+        _pool.closeall()
+        _pool = None
 
 
 def _parse_url() -> str:
@@ -39,15 +62,16 @@ class PgConnection:
     convenience methods: .execute(), .executescript(), rowcount, lastrowid.
     """
 
-    def __init__(self, conn):
+    def __init__(self, conn, pool=None):
         self._conn = conn
+        self._pool = pool
         self._last_cursor = None
 
     @staticmethod
-    def connect(dsn: str) -> "PgConnection":
+    def connect(dsn: str, pool=None) -> "PgConnection":
         conn = psycopg2.connect(dsn)
         conn.autocommit = False
-        return PgConnection(conn)
+        return PgConnection(conn, pool=pool)
 
     def _get_cursor(self):
         return self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -73,7 +97,10 @@ class PgConnection:
         self._conn.commit()
 
     def close(self):
-        self._conn.close()
+        if self._pool is not None:
+            self._pool.putconn(self._conn)
+        else:
+            self._conn.close()
 
     def rollback(self):
         self._conn.rollback()
@@ -159,9 +186,10 @@ def get_conn():
     """Return a PgConnection. Raises RuntimeError if DATABASE_URL is not set."""
     if not USE_POSTGRES:
         raise RuntimeError("PostgreSQL not configured: DATABASE_URL is empty")
-    dsn = _parse_url()
     try:
-        return PgConnection.connect(dsn)
+        pool = _get_pool()
+        raw_conn = pool.getconn()
+        return PgConnection(raw_conn, pool=pool)
     except Exception as exc:
         logger.error(f"PostgreSQL connection failed: {exc}")
         raise

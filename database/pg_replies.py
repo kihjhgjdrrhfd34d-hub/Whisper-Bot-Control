@@ -169,7 +169,8 @@ def mark_reply_read(reply_id: str, user_id: int) -> bool:
 def can_reply_to_whisper(whisper_id: str, user_id: int):
     with get_conn() as conn:
         w = conn.execute(
-            "SELECT sender_id, is_locked, is_closed FROM whispers WHERE whisper_id=%s",
+            "SELECT sender_id, is_locked, is_closed, is_destructive"
+            " FROM whispers WHERE whisper_id=%s",
             (whisper_id,),
         ).fetchone()
 
@@ -180,18 +181,28 @@ def can_reply_to_whisper(whisper_id: str, user_id: int):
     if w.get("is_closed", 0):
         return False, "whisper_locked"
 
-    if w["is_locked"]:
+    # Manual lock (non-destructive): block everyone
+    if w["is_locked"] and not w.get("is_destructive", 0):
         return False, "whisper_locked"
 
-    if user_id != w["sender_id"]:
+    # Determine if user is a participant
+    is_sender = (user_id == w["sender_id"])
+    is_reader = False
+    if not is_sender:
         with get_conn() as conn:
             is_reader = conn.execute(
                 "SELECT 1 FROM whisper_readers"
                 " WHERE whisper_id=%s AND user_id=%s",
                 (whisper_id, user_id),
-            ).fetchone()
-        if not is_reader:
-            return False, "not_participant"
+            ).fetchone() is not None
+
+    # Destructive lock: only participants may reply
+    if w["is_locked"] and not is_sender and not is_reader:
+        return False, "whisper_locked"
+
+    # Non-participants cannot reply (even when unlocked)
+    if not is_sender and not is_reader:
+        return False, "not_participant"
 
     current = count_replies(whisper_id)
     if current >= MAX_REPLIES_PER_WHISPER:

@@ -159,3 +159,14 @@ def update_whisper_cover_character(whisper_id, cover_code, character_code):
             (cover_code, character_code, whisper_id),
         )
         conn.commit()
+
+
+def cleanup_stale_inline_packages(hours=1):
+    from datetime import datetime, timezone, timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    with _pg_get_conn() as conn:
+        conn.execute(
+            "DELETE FROM ww_inline_packages WHERE created_at <= %s",
+            (cutoff,),
+        )
+        conn.commit()
