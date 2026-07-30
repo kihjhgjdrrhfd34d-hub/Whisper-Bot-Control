@@ -201,6 +201,7 @@ def _run_migrations():
                 ("group_inline_message_id", "TEXT"),
                 ("cover_code", "TEXT DEFAULT ''"),
                 ("character_code", "TEXT DEFAULT ''"),
+                ("conditions_data", "TEXT"),
             ]:
                 if col_name not in cols:
                     conn.execute(
@@ -360,6 +361,7 @@ def create_whisper(
     message_type=None, file_id=None, caption=None,
     location_lat=None, location_lon=None,
     media_type=None,
+    conditions_data=None,
 ):
     wid = str(uuid.uuid4())[:12]
     targets = json.dumps(target_users or [])
@@ -374,6 +376,8 @@ def create_whisper(
         ).isoformat()
     if media_type is None:
         media_type = message_type or "text"
+    if conditions_data is not None and not isinstance(conditions_data, str):
+        conditions_data = json.dumps(conditions_data)
     with get_conn() as conn:
         conn.execute(
             """
@@ -381,13 +385,13 @@ def create_whisper(
                 (whisper_id, sender_id, content, whisper_type,
                  target_users, max_readers, auto_delete_at, is_destructive,
                  message_type, file_id, caption, location_lat, location_lon,
-                 media_type)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 media_type, conditions_data)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (wid, sender_id, content, whisper_type, targets, max_readers,
              auto_delete_at, int(is_destructive),
              message_type, file_id, caption, location_lat, location_lon,
-             media_type),
+             media_type, conditions_data),
         )
         conn.commit()
     return wid
@@ -556,7 +560,7 @@ def record_whisper_read(whisper_id: str, user_id: int) -> bool:
             count = conn.execute(
                 "SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=%s",
                 (whisper_id,),
-            ).fetchone()[0]
+            ).fetchone()["count"]
             if count >= 3:
                 conn.execute(
                     "UPDATE whispers SET is_locked=1 WHERE whisper_id=%s",
@@ -1055,7 +1059,7 @@ def store_pending_media(user_id, message_type, file_id, caption=None, content=No
             (user_id, message_type, file_id, caption, content),
         )
         conn.commit()
-        return cur.fetchone()[0]
+        return cur.fetchone()["id"]
 
 
 def get_pending_media(user_id):

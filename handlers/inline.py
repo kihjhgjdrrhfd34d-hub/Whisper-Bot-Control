@@ -50,6 +50,7 @@ class InlineQueryWithChat(_types.InlineQuery):
             try:
                 self._chat = _types.Chat.de_json(chat_data) if isinstance(chat_data, (dict, str)) else chat_data
             except Exception:
+                logger.exception("[INLINE] Chat.de_json failed")
                 self._chat = None
         else:
             self._chat = None
@@ -154,6 +155,7 @@ def register_inline_handlers(bot: telebot.TeleBot):
     try:
         bot_username = bot.get_me().username
     except Exception:
+        logger.exception("[INLINE] get_me failed for register_inline_handlers")
         bot_username = ""
 
     # ── Inline query handler ─────────────────────────────────────────────────
@@ -270,7 +272,7 @@ def register_inline_handlers(bot: telebot.TeleBot):
                 chat_public_allowed = bool(gs.get("public_whispers_enabled", 1))
                 group_auto_delete_minutes = int(gs.get("auto_delete_minutes", 0))
             except Exception:
-                pass
+                logger.exception("[INLINE] get_group_settings failed for inline query")
 
         # ── Whisper rate-limit check (per-user per-group) ────────────────
         if chat_id_for_spam is not None:
@@ -677,7 +679,7 @@ def _handle_wrapped_chosen(bot, result, hours):
     try:
         delete_draft(user.id)
     except Exception:
-        pass
+        logger.exception("[INLINE_WHISPER] delete_draft failed")
     logger.info("[WW] whisper created wid=%s wtype=%s destructive=%s pkg=%s", wid, wtype, is_destructive, pkg_id)
 
 
@@ -719,7 +721,7 @@ def _handle_media_chosen(bot, result):
             location_lat = loc_data.get("latitude")
             location_lon = loc_data.get("longitude")
         except Exception:
-            pass
+            logger.exception("[MEDIA_INLINE] parse location data failed")
 
     max_readers_map = {"first_one": 1, "everyone": 0, "first_three": 3, "custom": 0}
     max_r = max_readers_map.get(wtype, 0)
@@ -743,7 +745,7 @@ def _handle_media_chosen(bot, result):
     try:
         bot_username = bot.get_me().username
     except Exception:
-        pass
+        logger.exception("[MEDIA_INLINE] get_me failed")
 
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(InlineKeyboardButton("🔒 اضغط للرؤية", callback_data=f"read:{wid}"))
@@ -770,7 +772,7 @@ def _handle_media_chosen(bot, result):
     try:
         delete_pending_media_by_id(pending_id)
     except Exception:
-        pass
+        logger.exception("[MEDIA_INLINE] delete_pending_media_by_id failed")
 
     try:
         send_dashboard(bot, user.id, wid)

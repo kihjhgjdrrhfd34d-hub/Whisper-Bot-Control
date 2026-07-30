@@ -96,19 +96,27 @@ def _edit_group_to_opened(bot, whisper_id, call=None):
 
     try:
         if call and getattr(call, "inline_message_id", None):
+            imid = call.inline_message_id
+            logger.info("[UI] _edit_group_to_opened via call.inline_message_id=%s whisper_id=%s", imid, whisper_id)
             bot.edit_message_reply_markup(
-                inline_message_id=call.inline_message_id, reply_markup=kb,
+                inline_message_id=imid, reply_markup=kb,
             )
         elif inline_msg_id:
+            logger.info("[UI] _edit_group_to_opened via DB inline_message_id=%s whisper_id=%s", inline_msg_id, whisper_id)
             bot.edit_message_reply_markup(
                 inline_message_id=inline_msg_id, reply_markup=kb,
             )
         elif group_chat_id and group_msg_id:
+            logger.info("[UI] _edit_group_to_opened via DB chat_id=%s message_id=%s whisper_id=%s", group_chat_id, group_msg_id, whisper_id)
             bot.edit_message_reply_markup(
                 chat_id=group_chat_id, message_id=group_msg_id, reply_markup=kb,
             )
     except Exception as e:
-        logger.debug(f"edit_group_to_opened: {e}")
+        err_str = str(e).lower()
+        if "not modified" in err_str or "message_not_modified" in err_str:
+            logger.debug("[UI] _edit_group_to_opened not-modified whisper_id=%s: %s", whisper_id, e)
+        else:
+            logger.warning("[UI] _edit_group_to_opened FAILED for whisper_id=%s: %s", whisper_id, e)
 
 
 def _destroy_whisper_message(call, bot):
@@ -169,31 +177,57 @@ def _update_group_keyboard(bot, whisper_id, w, call=None):
 
         try:
             if call and getattr(call, "inline_message_id", None):
+                imid = call.inline_message_id
+                logger.info("[UI] _update_group_keyboard editing via call.inline_message_id=%s whisper_id=%s reader_count=%s",
+                            imid, whisper_id, reader_count_val)
                 bot.edit_message_reply_markup(
-                    inline_message_id=call.inline_message_id, reply_markup=kb,
+                    inline_message_id=imid, reply_markup=kb,
                 )
+                logger.info("[UI] _update_group_keyboard OK via call.inline_message_id=%s whisper_id=%s",
+                            imid, whisper_id)
             elif call and call.message and call.message.chat.id and call.message.message_id:
+                cid = call.message.chat.id
+                mid = call.message.message_id
+                logger.info("[UI] _update_group_keyboard editing via call.message chat_id=%s message_id=%s whisper_id=%s reader_count=%s",
+                            cid, mid, whisper_id, reader_count_val)
                 bot.edit_message_reply_markup(
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id, reply_markup=kb,
+                    chat_id=cid,
+                    message_id=mid, reply_markup=kb,
                 )
+                logger.info("[UI] _update_group_keyboard OK via call.message chat_id=%s message_id=%s whisper_id=%s",
+                            cid, mid, whisper_id)
             elif inline_msg_id:
+                logger.info("[UI] _update_group_keyboard editing via DB inline_message_id=%s whisper_id=%s reader_count=%s",
+                            inline_msg_id, whisper_id, reader_count_val)
                 bot.edit_message_reply_markup(
                     inline_message_id=inline_msg_id, reply_markup=kb,
                 )
+                logger.info("[UI] _update_group_keyboard OK via DB inline_message_id=%s whisper_id=%s",
+                            inline_msg_id, whisper_id)
             elif group_chat_id and group_msg_id:
+                logger.info("[UI] _update_group_keyboard editing via DB chat_id=%s message_id=%s whisper_id=%s reader_count=%s",
+                            group_chat_id, group_msg_id, whisper_id, reader_count_val)
                 bot.edit_message_reply_markup(
                     chat_id=group_chat_id,
                     message_id=group_msg_id, reply_markup=kb,
                 )
+                logger.info("[UI] _update_group_keyboard OK via DB chat_id=%s message_id=%s whisper_id=%s",
+                            group_chat_id, group_msg_id, whisper_id)
             else:
                 logger.warning(
                     "[UI] SKIPPING keyboard update — no valid coords available! whisper_id=%s",
                     whisper_id,
                 )
         except Exception as e:
-            logger.warning("[UI] _update_group_keyboard FAILED for whisper_id=%s: %s",
-                           whisper_id, e)
+            err_str = str(e).lower()
+            if "not modified" in err_str or "message_not_modified" in err_str:
+                logger.debug(
+                    "[UI] _update_group_keyboard not-modified whisper_id=%s: %s",
+                    whisper_id, e,
+                )
+            else:
+                logger.warning("[UI] _update_group_keyboard FAILED for whisper_id=%s: %s",
+                               whisper_id, e)
 
         return reader_count_val
 
@@ -263,7 +297,7 @@ def _register_message_handlers(bot, user_states):
             try:
                 bot.reply_to(msg, SPAM_BLOCK_MESSAGE)
             except Exception:
-                pass
+                logger.exception("[SPAM] bot.reply_to failed")
             return
 
         ensure_user(user.id, user.username, user.first_name, user.last_name)
@@ -278,13 +312,13 @@ def _register_message_handlers(bot, user_states):
             try:
                 hours = int(get_setting("auto_delete_hours"))
             except Exception:
-                pass
+                logger.exception("[MEDIA_REPLY] parse auto_delete_hours failed")
 
         group_auto_delete_minutes = 0
         try:
             group_auto_delete_minutes = int(gs.get("auto_delete_minutes", 0))
         except Exception:
-            pass
+            logger.exception("[MEDIA_REPLY] parse group_auto_delete_minutes failed")
 
         wid = create_whisper(
             sender_id=user.id,
@@ -325,12 +359,12 @@ def _register_message_handlers(bot, user_states):
                     wid, chat_id=chat_id, message_id=sent_msg.message_id,
                 )
         except Exception:
-            pass
+            logger.exception("[MEDIA_REPLY] send_message failed")
 
         try:
             send_dashboard(bot, user.id, wid)
         except Exception:
-            pass
+            logger.exception("[MEDIA_REPLY] send_dashboard failed")
 
         record_whisper_timestamp(user.id, chat_id)
 
@@ -458,7 +492,7 @@ def _register_message_handlers(bot, user_states):
             try:
                 hours = int(get_setting("auto_delete_hours"))
             except Exception:
-                pass
+                logger.exception("[DESTRUCTIVE] parse auto_delete_hours failed")
 
         group_auto_delete_minutes = 0
         if msg.chat and msg.chat.type in ("group", "supergroup"):
@@ -466,7 +500,7 @@ def _register_message_handlers(bot, user_states):
                 gs = get_group_settings(msg.chat.id)
                 group_auto_delete_minutes = int(gs.get("auto_delete_minutes", 0))
             except Exception:
-                pass
+                logger.exception("[DESTRUCTIVE] parse group_auto_delete_minutes failed")
 
         wid = create_whisper(
             sender_id=user.id,
@@ -496,13 +530,13 @@ def _register_message_handlers(bot, user_states):
                     wid, chat_id=msg.chat.id, message_id=sent_msg.message_id,
                 )
         except Exception:
-            pass
+            logger.exception("[DESTRUCTIVE] send_message failed")
 
         # إرسال لوحة التحكم لمُرسل الهمسة
         try:
             send_dashboard(bot, user.id, wid)
         except Exception:
-            pass
+            logger.exception("[DESTRUCTIVE] send_dashboard failed")
 
 
 def _register_callback_handlers(bot, user_states):
@@ -954,7 +988,7 @@ def _register_callback_handlers(bot, user_states):
                 parse_mode="Markdown",
             )
         except Exception:
-            pass
+            logger.exception("[DELETE_CONFIRM] edit_message_text failed")
 
     @bot.callback_query_handler(func=lambda c: c.data == "cancel_action")
     def handle_cancel(call: telebot.types.CallbackQuery):
@@ -970,7 +1004,7 @@ def _register_callback_handlers(bot, user_states):
         try:
             bot.delete_message(call.message.chat.id, call.message.message_id)
         except Exception:
-            pass
+            logger.exception("[CANCEL] delete_message failed")
 
     # ─── Clear readers ───────────────────────────────────────────────────────
     @bot.callback_query_handler(func=lambda c: c.data.startswith("clear:"))
@@ -1107,7 +1141,7 @@ def _register_callback_handlers(bot, user_states):
                             reply_markup=kb,
                         )
                 except Exception:
-                    pass
+                    logger.exception("[LIKE] edit_message_reply_markup failed")
             bot.answer_callback_query(call.id, msg, show_alert=True)
         except Exception as e:
             logger.exception("[LIKE] like failed for whisper_id=%s", whisper_id)
@@ -1152,7 +1186,7 @@ def _register_callback_handlers(bot, user_states):
                             reply_markup=kb,
                         )
                 except Exception:
-                    pass
+                    logger.exception("[DISLIKE] edit_message_reply_markup failed")
             bot.answer_callback_query(call.id, msg, show_alert=True)
         except Exception as e:
             logger.exception("[DISLIKE] dislike failed for whisper_id=%s", whisper_id)

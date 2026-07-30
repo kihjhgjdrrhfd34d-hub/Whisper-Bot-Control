@@ -289,6 +289,12 @@ def _run_migrations():
                     ON ww_inline_packages(user_id)
             """)
 
+        # Migration 14: add conditions_data column to whispers (Conditional Whispers)
+        if "whispers" in tables:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(whispers)").fetchall()]
+            if "conditions_data" not in cols:
+                conn.execute("ALTER TABLE whispers ADD COLUMN conditions_data TEXT")
+
         # Migration 9: add spam-limit columns to group_settings if missing
         if "group_settings" in tables:
             gs_cols = [r[1] for r in conn.execute("PRAGMA table_info(group_settings)").fetchall()]
@@ -458,6 +464,7 @@ def create_whisper(
     message_type=None, file_id=None, caption=None,
     location_lat=None, location_lon=None,
     media_type=None,
+    conditions_data=None,
 ):
     wid = str(uuid.uuid4())[:12]
     targets = json.dumps(target_users or [])
@@ -472,6 +479,8 @@ def create_whisper(
         ).isoformat()
     if media_type is None:
         media_type = message_type or "text"
+    if conditions_data is not None and not isinstance(conditions_data, str):
+        conditions_data = json.dumps(conditions_data)
     with get_conn() as conn:
         conn.execute(
             """
@@ -479,13 +488,13 @@ def create_whisper(
                 (whisper_id, sender_id, content, whisper_type,
                  target_users, max_readers, auto_delete_at, is_destructive,
                  message_type, file_id, caption, location_lat, location_lon,
-                 media_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 media_type, conditions_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (wid, sender_id, content, whisper_type, targets, max_readers,
              auto_delete_at, int(is_destructive),
              message_type, file_id, caption, location_lat, location_lon,
-             media_type),
+             media_type, conditions_data),
         )
         conn.commit()
     return wid
