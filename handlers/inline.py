@@ -19,6 +19,12 @@ from database.wrapped_whispers import (
     update_whisper_cover_character,
     get_cover, get_character,
 )
+from database.envelope import (
+    get_draft as get_envelope_draft,
+    update_draft_target,
+    get_pending_draft,
+    delete_draft as delete_envelope_draft,
+)
 from handlers.dashboard import send_dashboard
 from handlers.media_wizard import (
     FOUR_OPTIONS, DESTRUCTIVE_OPTIONS, CONTACT_OPTION,
@@ -81,6 +87,15 @@ WRAPPED_DESTRUCTIVE_OPTIONS = [
     ("first_one",   1, "💣 تدميرية لأول شخص",          "تًحذف بعد قراءتها"),
     ("first_three", 3, "💣 تدميرية لأول 3 أشخاص",      "تُحذف بعد ثالث قارئ"),
     ("everyone",    0, "💣 تدميرية للجميع",            "تظهر كتنبيه ولا تتكرر"),
+]
+
+# Conditional whisper type options — mirror the wrapped whisper flow:
+# the inline placeholder is chosen, then create_whisper() runs with
+# the type selected in the inline result id.
+CONDITIONAL_TYPE_OPTIONS = [
+    ("first_one",   1, "☝️ لأول شخص",        "يقرأها أول شخص فقط"),
+    ("first_three", 3, "👥 لأول 3 أشخاص",    "يقرأها أول 3 أشخاص فقط"),
+    ("everyone",    0, "🌍 للجميع",           "يمكن لأي شخص قراءتها"),
 ]
 
 
@@ -147,6 +162,43 @@ def build_wrapped_inline_results(package, hours):
             )
         except Exception as e:
             logger.error(f"wrapped destructive inline build [{wtype}]: {e}")
+
+    return results
+
+
+def build_conditional_inline_results(draft, hours):
+    """
+    Build inline results for a conditional whisper draft.
+    Creates placeholder results WITHOUT calling create_whisper().
+    The actual whisper is created in _handle_conditional_chosen() when the
+    user selects a type. Returns list of InlineQueryResultArticle.
+    """
+    results = []
+    draft_id = draft["id"]
+
+    placeholder_text = (
+        f"✉️ همسة مشروطة\n\n"
+        f"⏳ جاري تجهيز الهمسة..."
+    )
+
+    placeholder_kb = InlineKeyboardMarkup(row_width=1)
+    placeholder_kb.add(InlineKeyboardButton("⏳ جاري التجهيز...", callback_data="cw_processing"))
+
+    for wtype, max_r, title, desc in CONDITIONAL_TYPE_OPTIONS:
+        try:
+            results.append(
+                InlineQueryResultArticle(
+                    id=f"cw:{wtype}:{draft_id}",
+                    title=title,
+                    description=desc,
+                    input_message_content=InputTextMessageContent(
+                        message_text=placeholder_text,
+                    ),
+                    reply_markup=placeholder_kb,
+                )
+            )
+        except Exception as e:
+            logger.error(f"conditional inline build [{wtype}]: {e}")
 
     return results
 
@@ -236,6 +288,56 @@ def register_inline_handlers(bot: telebot.TeleBot):
                         )
                     except Exception as e:
                         logger.error(f"answer_inline_query (ww: error): {e}")
+                    return
+
+        # ── Conditional whisper "cw:" prefix — create placeholder results ──
+        if raw.startswith("cw:"):
+            _draft_id_str = raw[3:].strip()
+            if _draft_id_str:
+                try:
+                    _draft_id = int(_draft_id_str)
+                except (ValueError, TypeError):
+                    _draft_id = None
+                _draft = None
+                if _draft_id is not None:
+                    _draft = get_envelope_draft(user.id)
+                    if not _draft or _draft["id"] != _draft_id:
+                        _draft = None
+                if _draft:
+                    _chat_id = 0
+                    if hasattr(query, "_chat") and query._chat and query._chat.id:
+                        _chat_id = query._chat.id
+                    try:
+                        update_draft_target(user.id, _chat_id)
+                    except Exception as e:
+                        logger.warning(f"[CW] update_draft_target failed: {e}")
+                    hours = _auto_hours()
+                    results = build_conditional_inline_results(_draft, hours)
+                    if results:
+                        try:
+                            bot.answer_inline_query(
+                                query.id, results, cache_time=0, is_personal=True,
+                            )
+                        except Exception as e:
+                            logger.error(f"answer_inline_query (cw:): {e}")
+                        return
+                else:
+                    try:
+                        bot.answer_inline_query(
+                            query.id,
+                            [InlineQueryResultArticle(
+                                id="cw:error:expired",
+                                title="❌ الهمسة غير متاحة",
+                                description="انتهت صلاحيتها أو تم استخدامها بالفعل.",
+                                input_message_content=InputTextMessageContent(
+                                    message_text="❌ انتهت صلاحية الهمسة أو تم استخدامها بالفعل."
+                                ),
+                            )],
+                            cache_time=0,
+                            is_personal=True,
+                        )
+                    except Exception as e:
+                        logger.error(f"answer_inline_query (cw: error): {e}")
                     return
 
         # ── Empty query: show placeholder ─────────────────────────────────
@@ -491,6 +593,11 @@ def register_inline_handlers(bot: telebot.TeleBot):
             _handle_wrapped_chosen(bot, result, _auto_hours())
             return
 
+        # ── Conditional whisper: create whisper now ──────────────────────
+        if result_id.startswith("cw:"):
+            _handle_conditional_chosen(bot, result, _auto_hours())
+            return
+
         # ── Media whisper: create whisper from pending ────────────────────
         if result_id.startswith("media:"):
             _handle_media_chosen(bot, result)
@@ -681,6 +788,102 @@ def _handle_wrapped_chosen(bot, result, hours):
     except Exception:
         logger.exception("[INLINE_WHISPER] delete_draft failed")
     logger.info("[WW] whisper created wid=%s wtype=%s destructive=%s pkg=%s", wid, wtype, is_destructive, pkg_id)
+
+
+def _handle_conditional_chosen(bot, result, hours):
+    """
+    Handle chosen inline result for conditional whispers.
+    Creates the actual whisper and edits the placeholder message.
+    """
+    user = result.from_user
+    result_id = result.result_id
+
+    # Parse: "cw:{wtype}:{draft_id}"
+    parts = result_id.split(":")
+    if len(parts) != 3:
+        logger.warning("[CW] invalid result_id format: %s", result_id)
+        return
+    _, wtype, draft_id_str = parts
+
+    draft = get_pending_draft(user.id)
+    if not draft:
+        logger.warning("[CW] pending draft not found for user=%s", user.id)
+        return
+
+    try:
+        if draft["id"] != int(draft_id_str):
+            logger.warning("[CW] draft mismatch user=%s draft=%s", user.id, draft_id_str)
+            return
+    except (ValueError, TypeError):
+        logger.warning("[CW] invalid draft id: %s", draft_id_str)
+        return
+
+    content = draft.get("content", "") or ""
+
+    max_readers_map = {"first_one": 1, "everyone": 0, "first_three": 3}
+    max_r = max_readers_map.get(wtype, 0)
+
+    try:
+        wid = create_whisper(
+            sender_id=user.id,
+            content=content,
+            whisper_type=wtype,
+            target_users=[],
+            max_readers=max_r,
+            auto_delete_hours=hours,
+            conditions_data=draft.get("conditions_data") or None,
+        )
+    except Exception as exc:
+        logger.error("[CW] create_whisper failed: %s", exc)
+        return
+
+    final_text = (
+        f"🔒 همسة مشروطة\n\n"
+        f"🔓 اضغط للرؤية"
+    )
+
+    bot_username = ""
+    try:
+        bot_username = bot.get_me().username
+    except Exception:
+        logger.exception("[CW] get_me failed")
+
+    kb = InlineKeyboardMarkup(row_width=1)
+    if bot_username:
+        kb.add(InlineKeyboardButton(
+            "🔓 اضغط للرؤية",
+            url=f"tg://resolve?domain={bot_username}&start=view_{wid}",
+        ))
+    else:
+        kb.add(InlineKeyboardButton("🔓 اضغط للرؤية", callback_data=f"read:{wid}"))
+
+    imid = result.inline_message_id
+    if imid:
+        try:
+            bot.edit_message_text(
+                final_text,
+                inline_message_id=imid,
+                reply_markup=kb,
+            )
+            logger.info("[CW] edit inline message SUCCEEDED wid=%s", wid)
+        except Exception as exc:
+            logger.warning("[CW] edit inline message FAILED wid=%s: %s", wid, exc)
+    else:
+        logger.warning("[CW] inline_message_id is None — cannot edit placeholder. wid=%s", wid)
+
+    if imid:
+        try:
+            update_whisper_group_message(wid, inline_message_id=imid)
+        except Exception as exc:
+            logger.warning("[CW] store inline_message_id failed: %s", exc)
+
+    try:
+        send_dashboard(bot, user.id, wid)
+    except Exception as exc:
+        logger.warning("[CW] send_dashboard failed: %s", exc)
+
+    delete_envelope_draft(user.id)
+    logger.info("[CW] whisper created wid=%s wtype=%s draft=%s", wid, wtype, draft_id_str)
 
 
 def _handle_media_chosen(bot, result):

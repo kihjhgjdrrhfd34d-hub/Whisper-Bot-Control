@@ -11,7 +11,7 @@ from database import (
     create_whisper, set_blocked, is_blocked, clear_blocked,
 )
 from handlers.inline import register_inline_handlers
-from handlers.whisper import register_whisper_handlers
+from handlers.whisper import register_whisper_handlers, handle_condition_answer_message
 from handlers.replies import register_reply_handlers, handle_reply_message
 from handlers.personal import register_personal_handlers, handle_personal_send_message
 from handlers.admin import (
@@ -24,6 +24,10 @@ from handlers._formatting import _fmt_username
 from handlers.media_wizard import register_media_wizard_handlers
 from handlers.media_whispers import register_media_whisper_handlers
 from handlers.contact_whisper import register_contact_whisper_handlers
+from handlers.conditional_whisper import (
+    register_conditional_whisper_handlers,
+    handle_conditional_whisper_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +200,7 @@ def _main_menu_text_and_kb(b, user):
         InlineKeyboardButton("🤫 الهمسات الشخصية", callback_data="pers_menu"),
         InlineKeyboardButton("🎭 همسة مغلفة", callback_data="ww_start"),
     )
+    kb.add(InlineKeyboardButton("🔐 همسة مشروطة", callback_data="cwhisper_start"))
     if user.id in ADMIN_IDS:
         kb.add(InlineKeyboardButton("🛡 لوحة التحكم", callback_data="admin:main_new"))
     return text, kb
@@ -301,6 +306,43 @@ def start_cmd(msg: telebot.types.Message):
             return
 
         w_dict = dict(whisper)
+
+        # ── Conditional whisper: render the condition interaction directly ──
+        if w_dict.get("conditions_data"):
+            from services.whisper_service import is_own_whisper
+            if user.id in ADMIN_IDS or is_own_whisper(user.id, w_dict):
+                content = w_dict.get("content") or w_dict.get("caption") or ""
+                bot.send_message(
+                    msg.chat.id,
+                    f"🤫 {content}" if content else "🤫 (محتوى فارغ)",
+                )
+                return
+
+            from conditions import ConditionUI, registry as condition_registry
+            cond_results = condition_registry.check_all(w_dict, user.id)
+            unmet = [r for r in cond_results if not r.passed]
+            if unmet:
+                result = unmet[0]
+                if result.requires_interaction:
+                    ConditionUI.render_interaction(
+                        None, bot, w_dict, result,
+                        user_states=user_states,
+                        user_id=user.id,
+                    )
+                else:
+                    bot.send_message(
+                        msg.chat.id,
+                        result.message or "❌ لم يتم استيفاء الشروط.",
+                    )
+                return
+
+            from services.whisper_service import is_destructive_whisper
+            from handlers.whisper import _complete_read_flow
+            _complete_read_flow(
+                bot, None, user, whisper_id_payload, w_dict,
+                is_destructive_whisper(w_dict),
+            )
+            return
 
         # ── Build whisper info card (metadata only, no content) ──────
         from database import get_user
@@ -485,6 +527,11 @@ def handle_messages(msg: telebot.types.Message):
     if not state:
         return
 
+    # ── Condition answer (password) — must reach the engine before any
+    #    generic fall-through ─────────────────────────────────────────────
+    if handle_condition_answer_message(bot, msg, user_states):
+        return   # message was consumed by the condition engine
+
     # ── Priority: whisper reply (must be checked before other states) ─────
     if handle_reply_message(bot, msg, user_states):
         return   # message was consumed by the reply handler
@@ -496,6 +543,10 @@ def handle_messages(msg: telebot.types.Message):
 
     # ── Personal whisper state ────────────────────────────────────────────
     if handle_personal_send_message(bot, msg, user_states):
+        return
+
+    # ── Conditional whisper state ──────────────────────────────────────────
+    if handle_conditional_whisper_message(bot, msg, user_states):
         return
 
     # ── Envelope draft state ──────────────────────────────────────────────
@@ -699,6 +750,7 @@ def register_all_handlers():
     register_wrapped_whisper_handlers(bot, user_states)
     register_media_whisper_handlers(bot, user_states)
     register_contact_whisper_handlers(bot, user_states)
+    register_conditional_whisper_handlers(bot, user_states)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

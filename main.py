@@ -20,6 +20,7 @@ from core.logging_config import setup_logging
 setup_logging(level="INFO")
 
 from database import init_db
+from database.whisper_conditions import init_whisper_conditions_db
 from keep_alive import keep_alive
 from bot import bot, register_all_handlers
 from scheduler import start_scheduler
@@ -41,6 +42,7 @@ def main() -> None:
     # ── 2. Core DB init ───────────────────────────────────────────────────────
     logger.info("🚀 تهيئة قاعدة البيانات الأساسية...")
     init_db()
+    init_whisper_conditions_db()
 
     # ── 3. Enterprise DB init ─────────────────────────────────────────────────
     logger.info("🏢 تهيئة جداول Enterprise...")

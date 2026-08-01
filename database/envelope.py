@@ -27,21 +27,31 @@ def init_envelope_db():
                 category        TEXT DEFAULT '',
                 template_name   TEXT DEFAULT '',
                 envelope_style  TEXT DEFAULT '',
+                target_chat_id  INTEGER DEFAULT 0,
+                status          TEXT DEFAULT 'draft',
+                conditions_data TEXT DEFAULT '',
                 created_at      TEXT DEFAULT (datetime('now'))
             );
             CREATE INDEX IF NOT EXISTS idx_wd_user
                 ON whisper_drafts(user_id);
         """)
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(whisper_drafts)").fetchall()]
+        if "target_chat_id" not in cols:
+            conn.execute("ALTER TABLE whisper_drafts ADD COLUMN target_chat_id INTEGER DEFAULT 0")
+        if "status" not in cols:
+            conn.execute("ALTER TABLE whisper_drafts ADD COLUMN status TEXT DEFAULT 'draft'")
+        if "conditions_data" not in cols:
+            conn.execute("ALTER TABLE whisper_drafts ADD COLUMN conditions_data TEXT DEFAULT ''")
         conn.commit()
 
 
-def create_draft(user_id, content, category='', template_name='', envelope_style=''):
+def create_draft(user_id, content, category='', template_name='', envelope_style='', conditions_data=''):
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO whisper_drafts
-               (user_id, content, category, template_name, envelope_style)
-               VALUES (?, ?, ?, ?, ?)""",
-            (user_id, content, category, template_name, envelope_style),
+               (user_id, content, category, template_name, envelope_style, conditions_data)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (user_id, content, category, template_name, envelope_style, conditions_data),
         )
         conn.commit()
 
@@ -59,6 +69,24 @@ def delete_draft(user_id):
     with get_conn() as conn:
         conn.execute("DELETE FROM whisper_drafts WHERE user_id=?", (user_id,))
         conn.commit()
+
+
+def update_draft_target(user_id, chat_id):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE whisper_drafts SET target_chat_id=?, status='pending' WHERE user_id=?",
+            (chat_id, user_id),
+        )
+        conn.commit()
+
+
+def get_pending_draft(user_id):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM whisper_drafts WHERE user_id=? AND status='pending' ORDER BY id DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        return dict(row) if row else None
 
 
 from database.postgres import USE_POSTGRES
