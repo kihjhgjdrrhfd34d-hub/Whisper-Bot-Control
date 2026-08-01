@@ -102,6 +102,9 @@ def admin_main_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton("💎 Enterprise",            callback_data="admin:enterprise_stats"),
     )
     kb.add(
+        InlineKeyboardButton("💡 الهمسات المشروطة",      callback_data="admin:conditional_whispers"),
+    )
+    kb.add(
         InlineKeyboardButton("📂 النسخ الاحتياطية",      callback_data="admin:backups"),
         back_button("back_to_main"),
     )

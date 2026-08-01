@@ -28,6 +28,7 @@ from handlers.conditional_whisper import (
     register_conditional_whisper_handlers,
     handle_conditional_whisper_message,
 )
+from handlers.conditional_whisper_admin import register_conditional_whisper_admin_handlers
 
 logger = logging.getLogger(__name__)
 
@@ -751,6 +752,7 @@ def register_all_handlers():
     register_media_whisper_handlers(bot, user_states)
     register_contact_whisper_handlers(bot, user_states)
     register_conditional_whisper_handlers(bot, user_states)
+    register_conditional_whisper_admin_handlers(bot)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
