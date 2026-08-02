@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import traceback
@@ -791,6 +792,48 @@ def _handle_wrapped_chosen(bot, result, hours):
     logger.info("[WW] whisper created wid=%s wtype=%s destructive=%s pkg=%s", wid, wtype, is_destructive, pkg_id)
 
 
+_CW_TYPE_TITLES = {
+    "first_one":   "🔐 همسة مشروطة لأول شخص",
+    "first_three": "👥 همسة مشروطة لأول 3 أشخاص",
+    "everyone":    "🌍 همسة مشروطة للجميع",
+    "custom":      "🎯 همسة مشروطة مخصصة",
+}
+
+_CW_CONDITION_LABELS = {
+    "password":       "🔑 الشرط: كلمة مرور",
+    "question":       "❓ الشرط: سؤال",
+    "time_window":    "⏰ الشرط: وقت",
+    "subscription":   "📢 الشرط: اشتراك",
+    "channel_member": "📢 الشرط: اشتراك",
+}
+
+
+def _build_conditional_ui_text(wtype, conditions_data=None):
+    """Build the display text for a conditional whisper (type + condition lines)."""
+    title = _CW_TYPE_TITLES.get(wtype, "🔒 همسة مشروطة")
+
+    cond = conditions_data or ""
+    if isinstance(cond, str):
+        try:
+            cond = json.loads(cond)
+        except (json.JSONDecodeError, TypeError):
+            cond = {}
+    if isinstance(cond, dict):
+        cond_keys = list(cond.keys())
+    elif isinstance(cond, list):
+        cond_keys = [c.get("type") or c.get("condition_name", "") for c in cond if isinstance(c, dict)]
+    else:
+        cond_keys = []
+
+    lines = [title]
+    if cond_keys:
+        label = _CW_CONDITION_LABELS.get(cond_keys[0])
+        if label:
+            lines.append("")
+            lines.append(label)
+    return "\n".join(lines)
+
+
 def _handle_conditional_chosen(bot, result, hours):
     """
     Handle chosen inline result for conditional whispers.
@@ -838,14 +881,7 @@ def _handle_conditional_chosen(bot, result, hours):
         logger.error("[CW] create_whisper failed: %s", exc)
         return
 
-    _cw_title = {
-        "first_one":   "🔐 همسة مشروطة لأول شخص",
-        "first_three": "👥 همسة مشروطة لأول 3 أشخاص",
-        "everyone":    "🌍 همسة مشروطة للجميع",
-        "custom":      "🎯 همسة مشروطة مخصصة",
-    }.get(wtype, "🔒 همسة مشروطة")
-
-    final_text = _cw_title
+    final_text = _build_conditional_ui_text(wtype, draft.get("conditions_data"))
 
     bot_username = ""
     try:
