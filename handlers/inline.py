@@ -93,9 +93,10 @@ WRAPPED_DESTRUCTIVE_OPTIONS = [
 # the inline placeholder is chosen, then create_whisper() runs with
 # the type selected in the inline result id.
 CONDITIONAL_TYPE_OPTIONS = [
-    ("first_one",   1, "☝️ لأول شخص",        "يقرأها أول شخص فقط"),
-    ("first_three", 3, "👥 لأول 3 أشخاص",    "يقرأها أول 3 أشخاص فقط"),
-    ("everyone",    0, "🌍 للجميع",           "يمكن لأي شخص قراءتها"),
+    ("first_one",   1, "🔐 همسة مشروطة لأول شخص",      "يقرأها أول شخص فقط"),
+    ("first_three", 3, "🔐 همسة مشروطة لأول 3 أشخاص",  "يقرأها أول 3 أشخاص فقط"),
+    ("everyone",    0, "🔓 همسة مشروطة للجميع",         "يمكن لأي شخص قراءتها"),
+    ("custom",      0, "🎯 همسة مشروطة مخصصة",           "مخصصة لشخص معين"),
 ]
 
 
@@ -837,10 +838,14 @@ def _handle_conditional_chosen(bot, result, hours):
         logger.error("[CW] create_whisper failed: %s", exc)
         return
 
-    final_text = (
-        f"🔒 همسة مشروطة\n\n"
-        f"🔓 اضغط للرؤية"
-    )
+    _cw_title = {
+        "first_one":   "🔐 همسة مشروطة لأول شخص",
+        "first_three": "👥 همسة مشروطة لأول 3 أشخاص",
+        "everyone":    "🌍 همسة مشروطة للجميع",
+        "custom":      "🎯 همسة مشروطة مخصصة",
+    }.get(wtype, "🔒 همسة مشروطة")
+
+    final_text = _cw_title
 
     bot_username = ""
     try:
