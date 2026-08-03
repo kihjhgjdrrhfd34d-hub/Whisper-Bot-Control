@@ -1302,7 +1302,17 @@ def _register_callback_handlers(bot, user_states):
 
     @bot.callback_query_handler(func=lambda c: c.data.startswith("confirm_delete:"))
     def handle_confirm_delete(call: telebot.types.CallbackQuery):
+        user = call.from_user
         whisper_id = call.data.split(":", 1)[1]
+        w = get_whisper(whisper_id)
+        if not w:
+            bot.answer_callback_query(call.id, "❌ الهمسة غير موجودة.", show_alert=True)
+            return
+        if w["sender_id"] != user.id:
+            bot.answer_callback_query(
+                call.id, "⛔ هذا الإجراء للمرسل فقط.", show_alert=True
+            )
+            return
         delete_whisper(whisper_id)
         bot.answer_callback_query(call.id, "🗑 تم حذف الهمسة بنجاح.", show_alert=True)
         try:

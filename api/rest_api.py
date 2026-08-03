@@ -21,13 +21,34 @@ api_bp = Blueprint("api", __name__, url_prefix="/api/v1")
 API_SECRET = os.getenv("API_SECRET", "")
 
 
+def _env_flag(name: str) -> bool:
+    """Pars 1/true/yes/on as True, everything else (incl. empty/unset) as False."""
+    val = os.getenv(name, "").strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+
+# Dev mode must be enabled explicitly. Only then is a missing API_SECRET tolerated.
+DEV_MODE = (
+    _env_flag("DEV_MODE")
+    or _env_flag("FLASK_DEBUG")
+    or _env_flag("DEBUG")
+)
+
+
 # ── Auth decorator ────────────────────────────────────────────────────────────
 
 def require_auth(f):
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
         if not API_SECRET:
-            return f(*args, **kwargs)   # dev mode: no auth
+            # In production a missing API_SECRET MUST NOT allow any admin endpoint.
+            if not DEV_MODE:
+                abort(
+                    503,
+                    "API_SECRET is not configured and DEV_MODE/DEBUG is not "
+                    "enabled. Refusing to serve the REST API.",
+                )
+            return f(*args, **kwargs)   # explicit dev mode: no auth
         token = request.headers.get("Authorization", "")
         if not token.startswith("Bearer ") or token[7:] != API_SECRET:
             abort(401, "Unauthorized")

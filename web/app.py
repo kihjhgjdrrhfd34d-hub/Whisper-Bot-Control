@@ -15,17 +15,55 @@ The REST API blueprint (/api/v1) is also mounted here.
 """
 from __future__ import annotations
 
+import html
 import os
 import logging
+import secrets
 from functools import wraps
 from threading import Thread
 
 from flask import (
     Flask, render_template_string, request, redirect, url_for,
-    session, flash,
+    session, flash, abort,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _esc(value) -> str:
+    """HTML-escape a user / database-supplied value for safe display.
+
+    Static page markup is kept as-is; only runtime user data is escaped.
+    """
+    if value is None:
+        return ""
+    return html.escape(str(value), quote=True)
+
+
+def _csrf_token() -> str:
+    """Get (or lazily create) this session's CSRF token."""
+    token = session.get("_csrf_token")
+    if not token:
+        token = secrets.token_hex(32)
+        session["_csrf_token"] = token
+    return token
+
+
+def _csrf_field() -> str:
+    """Hidden input carrying the CSRF token for dashboard POST forms."""
+    return f'<input type="hidden" name="_csrf" value="{_csrf_token()}">'
+
+
+def _validate_csrf() -> None:
+    """Verify the POST body CSRF token matches the session token.
+
+    Scope: called only from the admin dashboard POST handlers
+    (never from the REST API blueprint or any other route).
+    """
+    expected = session.get("_csrf_token")
+    provided = request.form.get("_csrf")
+    if not expected or not provided or provided != expected:
+        abort(400, "CSRF token missing or invalid")
 
 WEB_PORT  = int(os.getenv("WEB_PORT", "8081"))
 WEB_USER  = os.getenv("WEB_USER", "admin")
@@ -247,12 +285,12 @@ def users_page():
             if u["is_banned"] else
             '<span class="badge badge-green">نشط</span>'
         )
-        uname = f"@{u['username']}" if u["username"] else u["first_name"] or "—"
+        uname = f"@{_esc(u['username'])}" if u["username"] else _esc(u["first_name"]) or "—"
         rows_html += f"""
         <tr>
           <td><code>{u['user_id']}</code></td>
           <td>{uname}</td>
-          <td>{u.get('created_at','')[:10]}</td>
+          <td>{_esc(u['created_at'] if u['created_at'] else '')[:10]}</td>
           <td>{banned}</td>
         </tr>"""
     content = f"""
@@ -287,11 +325,11 @@ def reports_page():
         rows_html += f"""
         <tr>
           <td><code>{r['id']}</code></td>
-          <td><code>{r.get('whisper_id','—')}</code></td>
-          <td>{r.get('reason','—')[:60]}</td>
+          <td><code>{_esc(r.get('whisper_id','—'))}</code></td>
+          <td>{_esc(r.get('reason','—')[:60])}</td>
           <td><code>{r['reporter_id']}</code></td>
           <td>{badge}</td>
-          <td>{str(r.get('created_at',''))[:16]}</td>
+          <td>{_esc(str(r.get('created_at',''))[:16])}</td>
         </tr>"""
     content = f"""
     <h2 style="margin-bottom:20px;color:#58a6ff">🚨 البلاغات</h2>
@@ -317,7 +355,7 @@ def statistics_page():
         d = snap.get("data", {})
         snap_html += f"""
         <tr>
-          <td>{snap['period_label']}</td>
+          <td>{_esc(snap['period_label'])}</td>
           <td>{d.get('total_users',0)}</td>
           <td>{d.get('new_today',0)}</td>
           <td>{d.get('total_whispers',0)}</td>
@@ -352,6 +390,7 @@ def statistics_page():
 def backups_page():
     from enterprise.db_enterprise import list_backups, create_backup
     if request.method == "POST":
+        _validate_csrf()
         filename = create_backup(notes="web dashboard")
         flash(f"✅ تم إنشاء نسخة احتياطية: {filename}", "success")
         return redirect("/backups")
@@ -361,15 +400,16 @@ def backups_page():
         size_kb = (b.get("size_bytes") or 0) // 1024
         rows_html += f"""
         <tr>
-          <td><code>{b['filename']}</code></td>
+          <td><code>{_esc(b['filename'])}</code></td>
           <td>{size_kb} KB</td>
-          <td>{str(b.get('created_at',''))[:16]}</td>
-          <td>{b.get('notes','—')}</td>
+          <td>{_esc(str(b.get('created_at',''))[:16])}</td>
+          <td>{_esc(b.get('notes','—'))}</td>
         </tr>"""
     content = f"""
     <h2 style="margin-bottom:20px;color:#58a6ff">📂 النسخ الاحتياطية</h2>
     <div class="card" style="margin-bottom:16px">
       <form method="post">
+        {_csrf_field()}
         <button type="submit" class="btn btn-primary">➕ إنشاء نسخة احتياطية الآن</button>
       </form>
     </div>
@@ -387,6 +427,7 @@ def backups_page():
 def settings_page():
     from database import get_conn, set_setting, get_setting
     if request.method == "POST":
+        _validate_csrf()
         for key, value in request.form.items():
             if key.startswith("_"):
                 continue
@@ -402,9 +443,9 @@ def settings_page():
         fields_html += f"""
         <div style="margin-bottom:12px">
           <label style="color:#8b949e;font-size:0.85rem;display:block;margin-bottom:4px">
-            {r['key']}
+            {_esc(r['key'])}
           </label>
-          <input name="{r['key']}" value="{r['value']}"
+          <input name="{_esc(r['key'])}" value="{_esc(r['value'])}"
                  style="width:300px;max-width:100%">
         </div>"""
 
@@ -412,6 +453,7 @@ def settings_page():
     <h2 style="margin-bottom:20px;color:#58a6ff">⚙️ الإعدادات</h2>
     <div class="card">
       <form method="post">
+        {_csrf_field()}
         {fields_html}
         <button type="submit" class="btn btn-primary">💾 حفظ التغييرات</button>
       </form>
