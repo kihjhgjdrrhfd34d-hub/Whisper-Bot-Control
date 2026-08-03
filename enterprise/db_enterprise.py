@@ -1035,7 +1035,14 @@ def create_backup(created_by: Optional[int] = None, notes: str = "") -> str:
 
 def restore_backup(filename: str) -> bool:
     """Restore from a named backup file. Returns True on success."""
-    src = BACKUPS_DIR / filename
+    base = BACKUPS_DIR.resolve()
+    src = (BACKUPS_DIR / filename).resolve()
+
+    try:
+        src.relative_to(base)
+    except ValueError:
+        logger.error("Restore denied: %s escapes backups directory", filename)
+        return False
     if not src.exists():
         logger.error(f"Restore failed: {filename} not found")
         return False
