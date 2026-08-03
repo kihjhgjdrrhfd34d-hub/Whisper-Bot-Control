@@ -64,7 +64,10 @@ class PasswordCondition(BaseCondition):
         record_condition_attempt(
             whisper_id, user_id, self.name,
             passed=correct,
-            attempt_data={"answer": answer.strip()},
+            attempt_data={
+                "condition_type": "password",
+                "result": "success" if correct else "failed",
+            },
         )
         if correct:
             return ConditionResult(
