@@ -37,7 +37,8 @@ def health_check() -> Dict[str, Any]:
             conn.execute("SELECT 1").fetchone()
         db_status = "ok"
     except Exception as exc:
-        db_status = f"error: {exc}"
+        logger.error("Health check: database connectivity failed: %s", exc, exc_info=True)
+        db_status = "error"
         status = "degraded"
         issues.append("database")
 

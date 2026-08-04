@@ -16,11 +16,15 @@ The REST API blueprint (/api/v1) is also mounted here.
 from __future__ import annotations
 
 import html
+import hashlib
 import os
 import logging
 import secrets
 from functools import wraps
 from threading import Thread
+
+from core.rate_limiter import RateLimiter
+from config import SESSION_COOKIE_SECURE
 
 from flask import (
     Flask, render_template_string, request, redirect, url_for,
@@ -83,6 +87,23 @@ if SECRET_KEY is None:
 
 web_app = Flask(__name__, template_folder="templates")
 web_app.secret_key = SECRET_KEY
+
+web_app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=SESSION_COOKIE_SECURE,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
+
+
+# ── Login rate limiting (web dashboard only, keyed by client IP) ──────────────
+# Dedicated instance so web-login counters never mix with Telegram spam scores.
+_login_limiter = RateLimiter()
+
+
+def _ip_key() -> int:
+    """Stable integer key derived from the client IP for the rate limiter."""
+    ip = request.remote_addr or "0.0.0.0"
+    return int(hashlib.sha256(ip.encode("utf-8")).hexdigest(), 16)
 
 
 # ── Register API blueprint ────────────────────────────────────────────────────
@@ -199,13 +220,29 @@ def _render(content: str) -> str:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+def _safe_redirect_target(value):
+    """Return *value* only if it is a safe internal path; otherwise '/'."""
+    if not value or not value.startswith("/"):
+        return "/"
+    if value.startswith("//"):
+        return "/"
+    if "://" in value:
+        return "/"
+    return value
+
+
 @web_app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        ip_key = _ip_key()
         if (request.form.get("username") == WEB_USER and
                 request.form.get("password") == WEB_PASS):
+            _login_limiter.clear_user(ip_key)
             session["logged_in"] = True
-            return redirect(request.args.get("next") or "/")
+            return redirect(_safe_redirect_target(request.args.get("next")))
+        allowed, _ = _login_limiter.check(ip_key, "web_login")
+        if not allowed:
+            abort(429, "Too many login attempts. Please try again later.")
         flash("بيانات الدخول غير صحيحة", "error")
     form = """
     <div class="login-box">

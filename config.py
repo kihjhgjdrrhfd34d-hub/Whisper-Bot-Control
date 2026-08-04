@@ -13,6 +13,12 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "whispers.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 KEEP_ALIVE_PORT = int(os.getenv("KEEP_ALIVE_PORT", "8080"))
 
+# Mark the web session cookie Secure only when serving over HTTPS (e.g. Render).
+# Defaults to off so local development over HTTP keeps working.
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() in (
+    "1", "true", "yes", "on",
+)
+
 DEFAULT_SETTINGS = {
     "bot_active": "1",
     "membership_check": "0",

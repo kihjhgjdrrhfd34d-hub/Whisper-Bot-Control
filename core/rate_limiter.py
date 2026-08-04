@@ -23,6 +23,7 @@ DEFAULT_LIMITS = {
     "inline_query":  (20, 10),   # 20 inline queries per 10 s
     "callback":      (15, 10),   # 15 button taps per 10 s
     "whisper_create":(5,  60),   # 5 whisper creations per minute
+    "web_login":     (5,  60),   # 5 failed web-login attempts per minute (per IP)
 }
 
 TEMP_BAN_SECONDS = 300           # 5-minute temp ban on flood violation
