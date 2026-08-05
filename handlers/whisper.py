@@ -1,5 +1,6 @@
 import logging
 import threading
+import zlib
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from handlers.keyboard_utils import confirm_button, cancel_button
@@ -42,69 +43,87 @@ def _get_keyboard_lock(whisper_id: str) -> threading.Lock:
     return _KEYBOARD_LOCKS.setdefault(whisper_id, threading.Lock())
 
 
-_GENERAL_TITLES = [
-    "🌟 الفخم",
-    "🔥 الأسطورة",
-    "⚡ المميز",
-    "👑 الراقي",
-    "💎 النادر",
-    "✨ المتألق",
-    "🚀 المبدع",
-    "🏆 البطل",
-    "🌹 الجميل",
-    "🎯 المميز",
+_READER_MEDALS = {0: "🥇", 1: "🥈", 2: "🥉"}
+
+FIRST_READER_TITLES = [
+    "🚀 الصاروخ",
+    "⚡ البرق",
+    "🦅 القناص",
+    "🎯 المصيب",
+    "👑 المتوج",
+    "🔥 الناري",
 ]
 
-_FEMALE_TITLES = [
-    "👑 الملكة",
-    "🌹 الساحرة",
-    "✨ المتألقة",
-    "💎 الجوهرة",
-    "🌸 الراقية",
-    "🔥 المبدعة",
+FIRST_READER_LINES = [
+    "خطفها قبل الجميع",
+    "سبق الكل",
+    "اقتنص الفرصة",
+    "فتحها في لمح البصر",
+    "أخذ الصدارة",
 ]
 
-_MALE_TITLES = [
-    "👑 الملك",
-    "🔥 الأسطورة",
-    "⚡ الصقر",
-    "🏆 البطل",
-    "💎 النادر",
-    "🚀 القائد",
+SECOND_READER_TITLES = [
+    "🔥 المنافس",
+    "🏃 السريع",
+    "🎯 الملاحق",
+    "💪 العنيد",
+    "😎 الواثق",
 ]
 
-_FEMALE_KEYS = {"female", "f", "انثى", "أنثى", "انثي", "أنثي", "بنت", "بنات"}
-_MALE_KEYS = {"male", "m", "ذكر", "رجل", "ولد", "ولاد"}
+SECOND_READER_LINES = [
+    "لحق بسرعة",
+    "اقترب من الصدارة",
+    "لم يتأخر كثيرًا",
+    "دخل بثقة",
+    "نافس حتى النهاية",
+]
+
+THIRD_READER_TITLES = [
+    "🐢 الهادئ",
+    "😴 المتأني",
+    "🍀 المحظوظ",
+    "🎭 المفاجأة",
+    "🏁 الأخير",
+]
+
+THIRD_READER_LINES = [
+    "وصل قبل الإغلاق",
+    "خطف آخر فرصة",
+    "حضر في اللحظة الأخيرة",
+    "أكمل الثلاثي",
+    "دخل في الوقت المناسب",
+]
+
+_RANK_STYLES = {
+    0: (FIRST_READER_TITLES, FIRST_READER_LINES),
+    1: (SECOND_READER_TITLES, SECOND_READER_LINES),
+    2: (THIRD_READER_TITLES, THIRD_READER_LINES),
+}
 
 
-def _detect_reader_gender(reader) -> str | None:
-    """Return 'female'/'male' only when reader data carries an explicit
-    gender field. Never guesses from username."""
-    if not isinstance(reader, dict):
-        return None
-    gender = reader.get("gender")
-    if gender is None:
-        return None
-    g = str(gender).strip().lower()
-    if g in _FEMALE_KEYS:
-        return "female"
-    if g in _MALE_KEYS:
-        return "male"
-    return None
+def _pick_reader_style(whisper_id: str, index: int) -> tuple:
+    """Pick a deterministic (medal, title, line) for a reader.
+
+    Stable per whisper (same whisper_id + index always yields the same combo),
+    varies between whispers, and never uses random().
+    """
+    style = _RANK_STYLES.get(index)
+    if not style:
+        return "", "", ""
+    titles, lines = style
+    seed = zlib.crc32(f"{whisper_id}:{index}".encode("utf-8"))
+    title_seed = zlib.crc32(f"{whisper_id}:{index}:title".encode("utf-8"))
+    line_seed = zlib.crc32(f"{whisper_id}:{index}:line".encode("utf-8"))
+    medal = _READER_MEDALS.get(index, "")
+    title = titles[title_seed % len(titles)]
+    line = lines[line_seed % len(lines)]
+    return medal, title, line
 
 
-def _get_reader_title(reader, index) -> str:
-    """Return a fitting title for a reader, varied across positions."""
-    gender = _detect_reader_gender(reader)
-    if gender == "female":
-        pool = _FEMALE_TITLES
-    elif gender == "male":
-        pool = _MALE_TITLES
-    else:
-        pool = _GENERAL_TITLES
-    if not pool:
-        return ""
-    return pool[index % len(pool)]
+def _reader_button_label(whisper_id, index, name) -> str:
+    """Combine medal, title, name and a short line for the keyboard button."""
+    medal, title, line = _pick_reader_style(whisper_id, index)
+    return f"{medal} {title} {name} | {line}"
 
 
 def _extract_condition_config(w_dict: dict, condition_type: str) -> dict | None:
@@ -157,7 +176,7 @@ def _build_opened_keyboard(whisper_id, readers=None):
             for i, r in enumerate(readers[:max_names]):
                 name = get_reader_display_name(r)
                 names_added.append(name)
-                kb.add(InlineKeyboardButton(f"{_get_reader_title(r, i)} {name}", callback_data="noop"))
+                kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name), callback_data="noop"))
             logger.info("[UI] _build_opened_keyboard names=%s whisper_id=%s wtype=%s",
                         names_added, whisper_id, wtype)
     return kb
@@ -250,13 +269,13 @@ def _update_group_keyboard(bot, whisper_id, w, call=None):
                 kb.add(InlineKeyboardButton(_BEFOREAD_LABEL, callback_data=f"read:{whisper_id}"))
             for i, r in enumerate(readers):
                 name = get_reader_display_name(r)
-                kb.add(InlineKeyboardButton(f"{_get_reader_title(r, i)} {name}", callback_data="noop"))
+                kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name), callback_data="noop"))
 
         elif wtype == "first_one":
             kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
             for i, r in enumerate(readers):
                 name = get_reader_display_name(r)
-                kb.add(InlineKeyboardButton(f"{_get_reader_title(r, i)} {name}", callback_data="noop"))
+                kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name), callback_data="noop"))
         else:  # custom — لا نعرض أسماء القراء ولا أزرار التفاعل
             kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
 

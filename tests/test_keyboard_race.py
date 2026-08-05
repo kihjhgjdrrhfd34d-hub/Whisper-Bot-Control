@@ -35,13 +35,11 @@ def _boot():
 
 
 def _reader_name_buttons(kb):
-    """Reader name buttons now start with a reader title (see handlers/whisper.py)."""
-    from handlers.whisper import _GENERAL_TITLES, _FEMALE_TITLES, _MALE_TITLES
-    prefixes = tuple(f"{t} " for t in (_GENERAL_TITLES + _FEMALE_TITLES + _MALE_TITLES))
+    """Reader name buttons start with a rank medal (🥇/🥈/🥉)."""
     return [
         btn for row in kb.keyboard
         for btn in row
-        if btn.text.startswith(prefixes)
+        if btn.text.startswith(("🥇 ", "🥈 ", "🥉 "))
     ]
 
 
