@@ -123,7 +123,7 @@ class TestGroupSettingsKeyboard(unittest.TestCase):
 
     def test_has_expected_rows(self):
         kb = self._kb(2001)
-        self.assertEqual(len(kb.keyboard), 10)
+        self.assertEqual(len(kb.keyboard), 14)
 
     def test_has_back_button(self):
         kb = self._kb(2002)
@@ -213,16 +213,17 @@ class TestAutoDeletePresetButtons(unittest.TestCase):
         for cb in expected:
             self.assertIn(cb, preset_callbacks)
 
-    def test_preset_buttons_in_two_rows_of_three(self):
+    def test_preset_buttons_in_three_rows_of_two(self):
         kb = self._kb(5002)
         preset_rows = []
         for row in kb.keyboard:
             cbs = [btn.callback_data for btn in row]
             if any(cb.startswith("group_autodel_set:") for cb in cbs):
                 preset_rows.append(cbs)
-        self.assertEqual(len(preset_rows), 2)
-        self.assertEqual(len(preset_rows[0]), 3)
-        self.assertEqual(len(preset_rows[1]), 3)
+        self.assertEqual(len(preset_rows), 3)
+        self.assertEqual(len(preset_rows[0]), 2)
+        self.assertEqual(len(preset_rows[1]), 2)
+        self.assertEqual(len(preset_rows[2]), 2)
 
     def test_active_value_has_checkmark(self):
         update_group_setting(5003, "auto_delete_minutes", 5)
@@ -536,7 +537,7 @@ class TestAdminMainKeyboardHasGroupButton(unittest.TestCase):
             for btn in row:
                 if btn.callback_data == "admin:group_settings":
                     found = True
-                    self.assertIn("الهمسات", btn.text)
+                    self.assertIn("إعدادات", btn.text)
         self.assertTrue(
             found,
             "admin_main_keyboard should have 'admin:group_settings' button",

@@ -69,15 +69,13 @@ class TestOpenOnceTextFirstOne(unittest.TestCase):
         # Verify the keyboard builder produces the opened keyboard
         readers = db.get_readers(self.wid)
         kb = _build_opened_keyboard(self.wid, readers=readers)
-        # Row 0: opened label, Row 1: reader name (Bob), Row 2: reactions
-        self.assertEqual(len(kb.keyboard), 3)
+        # Row 0: opened label, Row 1: reader name (Bob)
+        self.assertEqual(len(kb.keyboard), 2)
         btn = kb.keyboard[0][0]
         self.assertEqual(btn.text, _OPENED_LABEL)
         self.assertEqual(btn.callback_data, "noop")
         name_btn = kb.keyboard[1][0]
         self.assertIn("Bob", name_btn.text)
-        like_btn = kb.keyboard[2][0]
-        self.assertIn("❤️", like_btn.text)
 
     def test_stored_group_message_coords(self):
         """Whisper record should have group_inline_message_id stored."""
@@ -211,15 +209,13 @@ class TestOpenOnceMediaWhisper(unittest.TestCase):
 
         readers = db.get_readers(self.wid)
         kb = _build_opened_keyboard(self.wid, readers=readers)
-        # Row 0: opened label, Row 1: reader name (Bob), Row 2: reactions
-        self.assertEqual(len(kb.keyboard), 3)
+        # Row 0: opened label, Row 1: reader name (Bob)
+        self.assertEqual(len(kb.keyboard), 2)
         btn = kb.keyboard[0][0]
         self.assertEqual(btn.text, _OPENED_LABEL)
         self.assertEqual(btn.callback_data, "noop")
         name_btn = kb.keyboard[1][0]
         self.assertIn("Bob", name_btn.text)
-        like_btn = kb.keyboard[2][0]
-        self.assertIn("❤️", like_btn.text)
 
 class TestDeepLinkOpenOnce(unittest.TestCase):
     """Deep-link open: group message should be edited to opened state."""
@@ -293,6 +289,66 @@ class TestEveryoneWhisperNotOpened(unittest.TestCase):
         dislike_btn = kb.keyboard[1][1]
         self.assertIn("❤️", like_btn.text)
         self.assertIn("👎", dislike_btn.text)
+
+
+class TestReactionButtonsPerType(unittest.TestCase):
+    """Reaction buttons (❤️/👎) appear only for everyone whispers,
+    not for first_one / first_three (commit c4a4c6e)."""
+
+    def _all_buttons(self, kb):
+        buttons = []
+        if kb is None:
+            return buttons
+        for row in kb.keyboard:
+            buttons.extend(row)
+        return buttons
+
+    def _reaction_buttons(self, kb):
+        return [b for b in self._all_buttons(kb)
+                if "❤️" in b.text or "👎" in b.text]
+
+    def test_everyone_has_reactions(self):
+        _boot()
+        wid = create_whisper(
+            sender_id=1001, content="public reactions",
+            whisper_type="everyone", max_readers=0,
+        )
+        record_read_and_check(wid, 1002)
+
+        from handlers.whisper import _build_opened_keyboard
+        kb = _build_opened_keyboard(wid)
+        reactions = self._reaction_buttons(kb)
+        self.assertEqual(len(reactions), 2, "everyone keeps like + dislike buttons")
+        self.assertIn("❤️", reactions[0].text)
+        self.assertIn("👎", reactions[1].text)
+
+    def test_first_one_has_no_reactions(self):
+        _boot()
+        wid = create_whisper(
+            sender_id=1001, content="secret one",
+            whisper_type="first_one", max_readers=1,
+        )
+        record_read_and_check(wid, 1002)
+
+        from handlers.whisper import _build_opened_keyboard
+        readers = db.get_readers(wid)
+        kb = _build_opened_keyboard(wid, readers=readers)
+        self.assertEqual(len(self._reaction_buttons(kb)), 0,
+                         "first_one must NOT show reaction buttons")
+
+    def test_first_three_has_no_reactions(self):
+        _boot()
+        wid = create_whisper(
+            sender_id=1001, content="team secret",
+            whisper_type="first_three", max_readers=3,
+        )
+        record_read_and_check(wid, 1002)
+
+        from handlers.whisper import _build_opened_keyboard
+        readers = db.get_readers(wid)
+        kb = _build_opened_keyboard(wid, readers=readers)
+        self.assertEqual(len(self._reaction_buttons(kb)), 0,
+                         "first_three must NOT show reaction buttons")
 
 
 if __name__ == "__main__":

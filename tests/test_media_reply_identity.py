@@ -359,7 +359,7 @@ class TestDeliveryShowsRealIdentity(unittest.TestCase):
         _deliver_media_reply(mock_bot, wid, READER, "Nice!", None, None)
 
         sent_text = mock_bot.send_message.call_args[0][1]
-        self.assertIn("@alice_id", sent_text,
+        self.assertIn("@alice\\_id", sent_text,
                        "Delivered message must contain @username")
 
     def test_delivered_header_is_not_anonymous(self):
@@ -393,7 +393,7 @@ class TestDeliveryShowsRealIdentity(unittest.TestCase):
         sent_text = mock_bot.send_message.call_args[0][1]
         self.assertIn("رد من:", sent_text)
         self.assertIn("Alice", sent_text)
-        self.assertIn("@alice_id", sent_text)
+        self.assertIn("@alice\\_id", sent_text)
 
     def test_delivered_photo_reply_sends_photo_with_header(self):
         """Photo reply sent to sender with real identity in caption."""
@@ -495,7 +495,7 @@ class TestHandleMediaReplyMessage(unittest.TestCase):
         delivered_text = _last_text_to(bot, SENDER)
         self.assertIn("Alice", delivered_text,
                        "Delivered reply must show real sender name")
-        self.assertIn("@alice_id", delivered_text,
+        self.assertIn("@alice\\_id", delivered_text,
                        "Delivered reply must show @username")
         self.assertNotIn("مجهول", delivered_text,
                          "Reply must NOT be labeled anonymous")

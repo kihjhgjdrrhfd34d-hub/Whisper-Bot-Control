@@ -405,6 +405,32 @@ class TestDestructiveMediaWhisper(unittest.TestCase):
         self.assertEqual(reader_count(wid), 3)
 
 
+def _dispatch_read_callback(bot_module, user_id, wid, username, first_name):
+    """Simulate the user pressing the '🔒 اضغط للرؤية' button (read:<wid>)."""
+    if not any(getattr(h["function"], "__name__", "") == "handle_read"
+               for h in bot_module.bot.callback_query_handlers):
+        bot_module.register_all_handlers()
+
+    call = MagicMock()
+    call.id = f"cb_read_{wid}_{user_id}"
+    call.data = f"read:{wid}"
+    call.from_user = MagicMock()
+    call.from_user.id = user_id
+    call.from_user.username = username
+    call.from_user.first_name = first_name
+    call.from_user.last_name = None
+    call.message = MagicMock()
+    call.message.chat.id = user_id
+    call.message.message_id = 2000 + user_id
+    call.inline_message_id = None
+
+    for handler in bot_module.bot.callback_query_handlers:
+        if bot_module.bot._test_message_handler(handler, call):
+            handler["function"](call)
+            return call
+    raise AssertionError(f"No callback handler matched read:{wid}")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. First Person Only access control (requirement #10)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -413,13 +439,13 @@ class TestFirstPersonOnlyMediaWhisperAccess(unittest.TestCase):
     """
     Specific access-control test for First Person Only media whispers.
 
-    Requirement #10:
-    - Create a media whisper with reader_limit = 1.
-    - User A opens via deep link view_<whisper_id> -> access succeeds, media delivered.
-    - User B opens via deep link view_<whisper_id> -> access denied.
-    - User B must receive exactly the message: "هذه الهمسة لم تعد متاحة"
+    Requirement #10 (deep-link flow after b8a65a9):
+    - User A opens via deep link view_<whisper_id> -> gets the metadata card
+      only; pressing the 'read' button records the read and delivers content.
+    - User B opens via deep link view_<whisper_id> -> gets the card only.
+    - Pressing the 'read' button as User B is denied with the current alert
+      "تم فتح هذه الهمسة بواسطة أول شخص." and no content/media is delivered.
     - Verify reader_count remains 1 after User B attempts.
-    - Verify no media is sent to User B.
     """
 
     def setUp(self):
@@ -453,7 +479,8 @@ class TestFirstPersonOnlyMediaWhisperAccess(unittest.TestCase):
         self.assertEqual(reader_count(wid), 1)
 
     def test_first_person_only_deny_message_exact(self):
-        """User B must receive exactly 'هذه الهمسة لم تعد متاحة'."""
+        """User B pressing read after the view_ card is denied with the current
+        alert and receives no content or media."""
         wid = create_whisper(
             sender_id=50001, content="", whisper_type="first_one",
             max_readers=1,
@@ -464,12 +491,25 @@ class TestFirstPersonOnlyMediaWhisperAccess(unittest.TestCase):
 
         import bot as bot_module
         original_send = bot_module.bot.send_message
+        original_send_photo = bot_module.bot.send_photo
+        original_answer = bot_module.bot.answer_callback_query
+        original_edit = bot_module.bot.edit_message_reply_markup
         sent = []
+        alerts = []
 
         def capture_send(chat_id, text, **kwargs):
             sent.append({"chat_id": chat_id, "text": text, "kwargs": kwargs})
 
+        def capture_send_photo(chat_id, *args, **kwargs):
+            sent.append({"chat_id": chat_id, "type": "photo", "text": None})
+
+        def capture_answer(callback_id, text, **kwargs):
+            alerts.append({"callback_id": callback_id, "text": text, "kwargs": kwargs})
+
         bot_module.bot.send_message = capture_send
+        bot_module.bot.send_photo = capture_send_photo
+        bot_module.bot.answer_callback_query = capture_answer
+        bot_module.bot.edit_message_reply_markup = MagicMock()
         bot_module.bot.get_me = MagicMock(return_value=MagicMock(username="testbot"))
 
         try:
@@ -489,16 +529,35 @@ class TestFirstPersonOnlyMediaWhisperAccess(unittest.TestCase):
 
             user_b_msgs = [m for m in sent if m["chat_id"] == 50003]
             self.assertGreater(len(user_b_msgs), 0,
-                               "User B should receive at least one message")
-            found_exact = any(
-                m["text"] == "هذه الهمسة لم تعد متاحة"
-                for m in user_b_msgs
+                               "User B should receive the view_ card")
+            self.assertEqual(reader_count(wid), 1,
+                             "view_ must not record a read for User B")
+
+            _dispatch_read_callback(bot_module, 50003, wid, "charlie_mwt", "Charlie")
+
+            self.assertEqual(reader_count(wid), 1,
+                             "reader_count must remain 1 after User B's attempt")
+            user_b_media = [
+                m for m in sent
+                if m["chat_id"] == 50003 and m.get("type") == "photo"
+            ]
+            self.assertEqual(len(user_b_media), 0,
+                             "No media should be sent to User B")
+            content_alerts = [
+                a["text"] for a in alerts
+                if "تم فتح هذه الهمسة بواسطة أول شخص." not in a["text"]
+            ]
+            self.assertEqual(len(content_alerts), 0,
+                             f"User B must not receive content alerts. Got: {alerts}")
+            self.assertTrue(
+                any("تم فتح هذه الهمسة بواسطة أول شخص." in a["text"] for a in alerts),
+                f"User B must get the current denial alert. Got: {alerts}",
             )
-            self.assertTrue(found_exact,
-                            f"User B must receive exactly 'هذه الهمسة لم تعد متاحة'. "
-                            f"Got: {[m['text'] for m in user_b_msgs]}")
         finally:
             bot_module.bot.send_message = original_send
+            bot_module.bot.send_photo = original_send_photo
+            bot_module.bot.answer_callback_query = original_answer
+            bot_module.bot.edit_message_reply_markup = original_edit
 
     def test_first_person_only_no_media_to_user_b(self):
         """Verify no media is sent to User B."""
@@ -553,7 +612,7 @@ class TestFirstPersonOnlyMediaWhisperAccess(unittest.TestCase):
             bot_module.bot.send_photo = original_send_photo
 
     def test_first_person_only_user_a_succeeds_via_deep_link(self):
-        """User A opens via deep link and gets media delivered."""
+        """User A opens via deep link, then presses read to get the content."""
         wid = create_whisper(
             sender_id=50001, content="", whisper_type="first_one",
             max_readers=1,
@@ -564,7 +623,10 @@ class TestFirstPersonOnlyMediaWhisperAccess(unittest.TestCase):
         import bot as bot_module
         original_send = bot_module.bot.send_message
         original_send_photo = bot_module.bot.send_photo
+        original_answer = bot_module.bot.answer_callback_query
+        original_edit = bot_module.bot.edit_message_reply_markup
         sent = []
+        alerts = []
 
         def capture_send(chat_id, text, **kwargs):
             sent.append({"chat_id": chat_id, "text": text, "kwargs": kwargs})
@@ -572,8 +634,13 @@ class TestFirstPersonOnlyMediaWhisperAccess(unittest.TestCase):
         def capture_send_photo(chat_id, *args, **kwargs):
             sent.append({"chat_id": chat_id, "type": "photo", "text": None})
 
+        def capture_answer(callback_id, text, **kwargs):
+            alerts.append({"callback_id": callback_id, "text": text, "kwargs": kwargs})
+
         bot_module.bot.send_message = capture_send
         bot_module.bot.send_photo = capture_send_photo
+        bot_module.bot.answer_callback_query = capture_answer
+        bot_module.bot.edit_message_reply_markup = MagicMock()
         bot_module.bot.get_me = MagicMock(return_value=MagicMock(username="testbot"))
 
         try:
@@ -591,18 +658,29 @@ class TestFirstPersonOnlyMediaWhisperAccess(unittest.TestCase):
 
             bot_module.start_cmd(msg)
 
-            self.assertEqual(reader_count(wid), 1)
+            self.assertEqual(reader_count(wid), 0,
+                             "view_ should only show the card, not record a read")
             user_a_msgs = [m for m in sent if m["chat_id"] == 50002]
             self.assertGreater(len(user_a_msgs), 0,
-                               "User A should receive content")
-            has_deny = any(
-                m["text"] == "هذه الهمسة لم تعد متاحة"
-                for m in user_a_msgs
+                               "User A should receive the view_ card")
+
+            _dispatch_read_callback(bot_module, 50002, wid, "bob_mwt", "Bob")
+
+            self.assertEqual(reader_count(wid), 1,
+                             "User A's read must be recorded after pressing read")
+            content_alerts = [
+                a["text"] for a in alerts
+                if a["text"] != "تم فتح هذه الهمسة بواسطة أول شخص."
+            ]
+            self.assertTrue(
+                any(len(a) > 0 for a in content_alerts),
+                f"User A should receive content via the read alert. Got: {alerts}",
             )
-            self.assertFalse(has_deny, "User A should NOT get the deny message")
         finally:
             bot_module.bot.send_message = original_send
             bot_module.bot.send_photo = original_send_photo
+            bot_module.bot.answer_callback_query = original_answer
+            bot_module.bot.edit_message_reply_markup = original_edit
 
 
 # ─────────────────────────────────────────────────────────────────────────────

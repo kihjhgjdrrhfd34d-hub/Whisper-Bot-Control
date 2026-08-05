@@ -109,10 +109,10 @@ class TestMediaTypeColumnExists(unittest.TestCase):
             ).fetchall()]
         self.assertIn("media_type", cols)
 
-    def test_media_type_is_nullable(self):
+    def test_text_whisper_defaults_to_text_media_type(self):
         wid = create_whisper(30001, "test", "everyone")
         w = get_whisper(wid)
-        self.assertIsNone(w["media_type"])
+        self.assertEqual(w["media_type"], "text")
 
     def test_file_id_column_exists(self):
         with db.get_conn() as conn:
@@ -245,7 +245,7 @@ class TestTextWhisperBackwardCompat(unittest.TestCase):
         wid = create_whisper(30001, "Hello!", "everyone")
         w = get_whisper(wid)
         self.assertIsNotNone(w)
-        self.assertIsNone(w["media_type"])
+        self.assertEqual(w["media_type"], "text")
         self.assertIsNone(w["message_type"])
         self.assertIsNone(w["file_id"])
 
@@ -255,7 +255,7 @@ class TestTextWhisperBackwardCompat(unittest.TestCase):
             message_type=None, file_id=None, media_type=None,
         )
         w = get_whisper(wid)
-        self.assertIsNone(w["media_type"])
+        self.assertEqual(w["media_type"], "text")
         self.assertIsNone(w["file_id"])
 
     def test_text_whisper_preserves_all_fields(self):
@@ -267,7 +267,7 @@ class TestTextWhisperBackwardCompat(unittest.TestCase):
         self.assertEqual(w["content"], "Secret")
         self.assertEqual(w["whisper_type"], "custom")
         self.assertEqual(w["max_readers"], 1)
-        self.assertIsNone(w["media_type"])
+        self.assertEqual(w["media_type"], "text")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
