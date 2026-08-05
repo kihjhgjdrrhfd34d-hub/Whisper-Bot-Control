@@ -34,6 +34,17 @@ def _boot():
     upsert_user(60004, "dave",    "Dave",    None)
 
 
+def _reader_name_buttons(kb):
+    """Reader name buttons now start with a reader title (see handlers/whisper.py)."""
+    from handlers.whisper import _GENERAL_TITLES, _FEMALE_TITLES, _MALE_TITLES
+    prefixes = tuple(f"{t} " for t in (_GENERAL_TITLES + _FEMALE_TITLES + _MALE_TITLES))
+    return [
+        btn for row in kb.keyboard
+        for btn in row
+        if btn.text.startswith(prefixes)
+    ]
+
+
 class TestKeyboardLockMechanism(unittest.TestCase):
     """Test the per-whisper locking mechanism in isolation."""
 
@@ -95,11 +106,7 @@ class TestUpdateGroupKeyboardReaders(unittest.TestCase):
         update_whisper_group_message(self.wid, inline_message_id="test_inline")
 
     def _verify_reader_names(self, kb, expected_count):
-        name_buttons = [
-            btn for row in kb.keyboard
-            for btn in row
-            if btn.text.startswith("👤")
-        ]
+        name_buttons = _reader_name_buttons(kb)
         self.assertEqual(len(name_buttons), expected_count,
                          f"Expected {expected_count} reader name buttons in keyboard")
         return name_buttons
@@ -199,11 +206,7 @@ class TestConcurrentFirstThreeKeyboard(unittest.TestCase):
         call = bot.edit_message_reply_markup.call_args
         kb = call[1]["reply_markup"]
 
-        name_buttons = [
-            btn for row in kb.keyboard
-            for btn in row
-            if btn.text.startswith("👤")
-        ]
+        name_buttons = _reader_name_buttons(kb)
         self.assertEqual(len(name_buttons), 3,
                          "Keyboard must show all 3 reader names after concurrent reads")
 
@@ -251,11 +254,7 @@ class TestConcurrentFirstThreeKeyboard(unittest.TestCase):
         call = bot.edit_message_reply_markup.call_args
         kb = call[1]["reply_markup"]
 
-        name_buttons = [
-            btn for row in kb.keyboard
-            for btn in row
-            if btn.text.startswith("👤")
-        ]
+        name_buttons = _reader_name_buttons(kb)
         self.assertEqual(len(name_buttons), 3)
 
 

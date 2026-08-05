@@ -42,6 +42,71 @@ def _get_keyboard_lock(whisper_id: str) -> threading.Lock:
     return _KEYBOARD_LOCKS.setdefault(whisper_id, threading.Lock())
 
 
+_GENERAL_TITLES = [
+    "🌟 الفخم",
+    "🔥 الأسطورة",
+    "⚡ المميز",
+    "👑 الراقي",
+    "💎 النادر",
+    "✨ المتألق",
+    "🚀 المبدع",
+    "🏆 البطل",
+    "🌹 الجميل",
+    "🎯 المميز",
+]
+
+_FEMALE_TITLES = [
+    "👑 الملكة",
+    "🌹 الساحرة",
+    "✨ المتألقة",
+    "💎 الجوهرة",
+    "🌸 الراقية",
+    "🔥 المبدعة",
+]
+
+_MALE_TITLES = [
+    "👑 الملك",
+    "🔥 الأسطورة",
+    "⚡ الصقر",
+    "🏆 البطل",
+    "💎 النادر",
+    "🚀 القائد",
+]
+
+_FEMALE_KEYS = {"female", "f", "انثى", "أنثى", "انثي", "أنثي", "بنت", "بنات"}
+_MALE_KEYS = {"male", "m", "ذكر", "رجل", "ولد", "ولاد"}
+
+
+def _detect_reader_gender(reader) -> str | None:
+    """Return 'female'/'male' only when reader data carries an explicit
+    gender field. Never guesses from username."""
+    if not isinstance(reader, dict):
+        return None
+    gender = reader.get("gender")
+    if gender is None:
+        return None
+    g = str(gender).strip().lower()
+    if g in _FEMALE_KEYS:
+        return "female"
+    if g in _MALE_KEYS:
+        return "male"
+    return None
+
+
+def _get_reader_title(reader, index) -> str:
+    """Return a fitting title for a reader, varied across positions."""
+    gender = _detect_reader_gender(reader)
+    if gender == "female":
+        pool = _FEMALE_TITLES
+    elif gender == "male":
+        pool = _MALE_TITLES
+    else:
+        pool = _GENERAL_TITLES
+    if not pool:
+        return ""
+    return pool[index % len(pool)]
+
+
 def _extract_condition_config(w_dict: dict, condition_type: str) -> dict | None:
     """Extract config dict for a condition_type from whisper's conditions_data."""
     raw = w_dict.get("conditions_data")
@@ -89,10 +154,10 @@ def _build_opened_keyboard(whisper_id, readers=None):
         if show_names:
             max_names = 3 if wtype == "first_three" else len(readers)
             names_added = []
-            for r in readers[:max_names]:
+            for i, r in enumerate(readers[:max_names]):
                 name = get_reader_display_name(r)
                 names_added.append(name)
-                kb.add(InlineKeyboardButton(f"👤 {name}", callback_data="noop"))
+                kb.add(InlineKeyboardButton(f"{_get_reader_title(r, i)} {name}", callback_data="noop"))
             logger.info("[UI] _build_opened_keyboard names=%s whisper_id=%s wtype=%s",
                         names_added, whisper_id, wtype)
     return kb
@@ -183,15 +248,15 @@ def _update_group_keyboard(bot, whisper_id, w, call=None):
                 kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
             else:
                 kb.add(InlineKeyboardButton(_BEFOREAD_LABEL, callback_data=f"read:{whisper_id}"))
-            for r in readers:
+            for i, r in enumerate(readers):
                 name = get_reader_display_name(r)
-                kb.add(InlineKeyboardButton(f"👤 {name}", callback_data="noop"))
+                kb.add(InlineKeyboardButton(f"{_get_reader_title(r, i)} {name}", callback_data="noop"))
 
         elif wtype == "first_one":
             kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
-            for r in readers:
+            for i, r in enumerate(readers):
                 name = get_reader_display_name(r)
-                kb.add(InlineKeyboardButton(f"👤 {name}", callback_data="noop"))
+                kb.add(InlineKeyboardButton(f"{_get_reader_title(r, i)} {name}", callback_data="noop"))
         else:  # custom — لا نعرض أسماء القراء ولا أزرار التفاعل
             kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
 
