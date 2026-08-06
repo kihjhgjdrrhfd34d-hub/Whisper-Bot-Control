@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import random
 from database import get_conn
 
 logger = logging.getLogger(__name__)
@@ -8,6 +9,7 @@ logger = logging.getLogger(__name__)
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 COVERS_PATH = os.path.join(DATA_DIR, "wrapped_covers.json")
 CHARACTERS_PATH = os.path.join(DATA_DIR, "wrapped_characters.json")
+FUNNY_READER_TITLES_PATH = os.path.join(DATA_DIR, "funny_reader_titles.json")
 
 
 def _load_json(path):
@@ -51,6 +53,16 @@ def get_character(code):
         if c["code"] == code:
             return c
     return None
+
+
+def get_all_reader_titles():
+    titles = _load_json(FUNNY_READER_TITLES_PATH)
+    return titles if titles else ["👀 فضولي"]
+
+
+def get_random_reader_title():
+    titles = get_all_reader_titles()
+    return random.choice(titles)
 
 
 def init_wrapped_whispers_db():
