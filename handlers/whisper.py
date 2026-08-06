@@ -36,8 +36,13 @@ from services.whisper_service import (
 
 logger = logging.getLogger(__name__)
 
-_OPENED_LABEL = "تم قراءة الهمسة 🔒"
-_BEFOREAD_LABEL = "اضغط للرؤية 🔓"
+_OPENED_LABEL = "🔒 تم فتح الهمسة"
+_BEFOREAD_LABEL = "🔐 افتح الهمسة"
+
+_WHISPER_ALERT_INTRO = (
+    "🌙 بوت الهمسة الأول على تيليجرام ✨\n\n"
+    "💌 همستك السرية:\n\n"
+)
 
 _KEYBOARD_LOCKS: dict[str, threading.Lock] = {}
 
@@ -446,7 +451,7 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
                 "animation": "🎞 متحركة",
             }.get(w_dict["message_type"], w_dict["message_type"])
             caption = w_dict.get("content") or w_dict.get("caption") or ""
-            alert_text = f"🤫 {mt_label}"
+            alert_text = f"{_WHISPER_ALERT_INTRO}🤫 {mt_label}"
             if caption:
                 alert_text += f"\n{caption}"
             if call:
@@ -454,7 +459,7 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
             else:
                 bot.send_message(user.id, alert_text)
         else:
-            content = f"🤫 {w['content']}" if w.get("content") else "🤫 (محتوى فارغ)"
+            content = f"{_WHISPER_ALERT_INTRO}🤫 {w['content']}" if w.get("content") else f"{_WHISPER_ALERT_INTRO}🤫 (محتوى فارغ)"
             if call:
                 bot.answer_callback_query(call.id, content, show_alert=True)
             else:
