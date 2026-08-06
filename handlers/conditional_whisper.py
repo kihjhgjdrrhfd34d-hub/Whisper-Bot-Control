@@ -41,6 +41,7 @@ def _cancel_kb():
 CONDITION_OPTIONS = [
     ("🔑 كلمة مرور", "password"),
     ("❓ سؤال وإجابة", "question"),
+    ("🎯 اختيار من متعدد", "multiple_choice"),
 ]
 
 
@@ -54,6 +55,8 @@ def _condition_label(state: dict) -> str:
             conditions_data = {}
     if "question" in conditions_data:
         return "❓ محمية بسؤال وجواب"
+    if "multiple_choice" in conditions_data:
+        return "🎯 محمية باختيار من متعدد"
     if "password" in conditions_data:
         return "🔐 محمية بكلمة مرور"
     return "🔐 همسة مشروطة"
@@ -107,6 +110,14 @@ def register_conditional_whisper_handlers(bot: telebot.TeleBot, user_states: dic
             bot.send_message(
                 call.message.chat.id,
                 "❓ أرسل السؤال.",
+                reply_markup=_cancel_kb(),
+            )
+        elif cond_type == "multiple_choice":
+            bot.answer_callback_query(call.id)
+            user_states[user.id] = {"action": "cw_awaiting_mc_question"}
+            bot.send_message(
+                call.message.chat.id,
+                "🎯 أرسل السؤال.",
                 reply_markup=_cancel_kb(),
             )
         else:
@@ -235,6 +246,102 @@ def handle_conditional_whisper_message(
         bot.send_message(
             msg.chat.id,
             "✅ تم حفظ السؤال والإجابة.\n\n"
+            "📝 أرسل نص الهمسة:",
+            parse_mode="Markdown",
+            reply_markup=_cancel_kb(),
+        )
+        return True
+
+    if action == "cw_awaiting_mc_question":
+        question = (msg.text or "").strip()
+        if not question:
+            bot.send_message(msg.chat.id, "⚠️ أرسل السؤال.")
+            return True
+        if question.startswith("/"):
+            bot.send_message(msg.chat.id, "⚠️ السؤال لا يمكن أن يبدأ بـ /")
+            return True
+
+        user_states[user.id] = {
+            "action": "cw_awaiting_mc_choice",
+            "mc_question": question,
+            "mc_choices": [],
+        }
+        bot.send_message(
+            msg.chat.id,
+            "1️⃣ أرسل الخيار الأول.",
+            reply_markup=_cancel_kb(),
+        )
+        return True
+
+    if action == "cw_awaiting_mc_choice":
+        choice = (msg.text or "").strip()
+        choices = state.get("mc_choices") or []
+        if not choice:
+            bot.send_message(msg.chat.id, "⚠️ أرسل الخيار.")
+            return True
+        if choice.startswith("/"):
+            bot.send_message(msg.chat.id, "⚠️ الخيار لا يمكن أن يبدأ بـ /")
+            return True
+
+        choices.append(choice)
+        if len(choices) < 4:
+            user_states[user.id] = {
+                "action": "cw_awaiting_mc_choice",
+                "mc_question": state.get("mc_question", ""),
+                "mc_choices": choices,
+            }
+            bot.send_message(
+                msg.chat.id,
+                f"{len(choices) + 1}️⃣ أرسل الخيار التالي.",
+                reply_markup=_cancel_kb(),
+            )
+            return True
+
+        user_states[user.id] = {
+            "action": "cw_awaiting_mc_correct",
+            "mc_question": state.get("mc_question", ""),
+            "mc_choices": choices,
+        }
+        bot.send_message(
+            msg.chat.id,
+            "🎯 أرسل رقم الخيار الصحيح (1-4):",
+            reply_markup=_cancel_kb(),
+        )
+        return True
+
+    if action == "cw_awaiting_mc_correct":
+        raw = (msg.text or "").strip()
+        choices = state.get("mc_choices") or []
+        if not raw:
+            bot.send_message(msg.chat.id, "⚠️ أرسل رقم الخيار الصحيح (1-4).")
+            return True
+        try:
+            correct = int(raw)
+        except ValueError:
+            correct = 0
+        if correct < 1 or correct > len(choices):
+            bot.send_message(
+                msg.chat.id,
+                f"⚠️ أرسل رقمًا صحيحًا بين 1 و {len(choices)}.",
+                reply_markup=_cancel_kb(),
+            )
+            return True
+
+        mc_config = {
+            "question": state.get("mc_question", ""),
+            "choices": choices,
+            "correct_index": correct - 1,
+        }
+        user_states[user.id] = {
+            "action": "cw_awaiting_content",
+            "mc_question": state.get("mc_question", ""),
+            "conditions_data": {
+                "multiple_choice": mc_config,
+            },
+        }
+        bot.send_message(
+            msg.chat.id,
+            "✅ تم حفظ السؤال والخيارات.\n\n"
             "📝 أرسل نص الهمسة:",
             parse_mode="Markdown",
             reply_markup=_cancel_kb(),

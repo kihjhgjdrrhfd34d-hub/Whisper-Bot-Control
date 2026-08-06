@@ -168,6 +168,14 @@ class ConditionUI:
         whisper_id = whisper.get("whisper_id", "")
         cond_type = condition_result.condition_type
         kb = InlineKeyboardMarkup()
+        if cond_type == "multiple_choice":
+            meta = getattr(condition_result, "data", None) or {}
+            choices = meta.get("choices") or []
+            for i, choice in enumerate(choices):
+                kb.add(InlineKeyboardButton(
+                    f"{i + 1}️⃣ {choice}",
+                    callback_data=f"mc_pick:{whisper_id}:{i}",
+                ))
         kb.add(InlineKeyboardButton("❌ إلغاء", callback_data=f"cond_cancel:{whisper_id}"))
         target_id = user_id
         if target_id is None and call:

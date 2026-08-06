@@ -1443,6 +1443,81 @@ def _register_callback_handlers(bot, user_states):
         user_states.pop(user.id, None)
         bot.answer_callback_query(call.id, "❌ أُلغي طلب كلمة المرور.", show_alert=True)
 
+    # ─── Multiple-choice condition answer ──────────────────────────────────
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("mc_pick:"))
+    def handle_mc_pick(call: telebot.types.CallbackQuery):
+        user = call.from_user
+        parts = call.data.split(":", 2)
+        if len(parts) != 3:
+            bot.answer_callback_query(call.id, "❌ رابط غير صالح.", show_alert=True)
+            return
+        _, whisper_id, raw_idx = parts
+        try:
+            picked = int(raw_idx)
+        except ValueError:
+            bot.answer_callback_query(call.id, "❌ رابط غير صالح.", show_alert=True)
+            return
+        w = get_whisper(whisper_id)
+        if not w:
+            bot.answer_callback_query(call.id, "❌ هذه الهمسة غير موجودة.", show_alert=True)
+            user_states.pop(user.id, None)
+            return
+        w_dict = dict(w)
+        config = _extract_condition_config(w_dict, "multiple_choice")
+        if not config:
+            bot.answer_callback_query(call.id, "❌ شرط غير موجود.", show_alert=True)
+            user_states.pop(user.id, None)
+            return
+        handler = condition_registry.get("multiple_choice")
+        if not handler:
+            bot.answer_callback_query(call.id, "❌ نوع الشرط غير معروف.", show_alert=True)
+            user_states.pop(user.id, None)
+            return
+        result = handler.handle_interaction(
+            call=call, bot=bot, whisper=w_dict,
+            user_id=user.id, config=config,
+            answer=str(picked),
+        )
+        if result.passed:
+            all_results = condition_registry.check_all(w_dict, user.id)
+            unmet = [r for r in all_results if not r.passed]
+            if not unmet:
+                user_states.pop(user.id, None)
+                _complete_read_flow(
+                    bot, call=call, user=user,
+                    whisper_id=whisper_id, w=w_dict,
+                    is_destructive=is_destructive_whisper(w),
+                )
+            else:
+                for r in unmet:
+                    if r.requires_interaction:
+                        ConditionUI.render_interaction(
+                            call=call, bot=bot, whisper=w_dict,
+                            condition_result=r,
+                            user_states=user_states,
+                            user_id=user.id,
+                        )
+                        return
+                    else:
+                        bot.answer_callback_query(
+                            call.id, r.message or "❌ لم يتم استيفاء الشروط.", show_alert=True
+                        )
+                        user_states.pop(user.id, None)
+                        return
+        else:
+            bot.answer_callback_query(
+                call.id, result.message or "❌ إجابة غير صحيحة، حاول مرة أخرى.",
+                show_alert=True,
+            )
+            if result.requires_interaction:
+                user_states[user.id] = {
+                    "action": "cond_answer",
+                    "whisper_id": whisper_id,
+                    "condition_type": "multiple_choice",
+                }
+            else:
+                user_states.pop(user.id, None)
+
     # ─── Clear readers ───────────────────────────────────────────────────────
     @bot.callback_query_handler(func=lambda c: c.data.startswith("clear:"))
     def handle_clear(call: telebot.types.CallbackQuery):
