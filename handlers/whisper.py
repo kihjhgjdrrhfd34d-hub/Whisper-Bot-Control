@@ -15,6 +15,7 @@ from database import (
     update_whisper_group_message,
 )
 from conditions import ConditionUI, registry as condition_registry
+from database.wrapped_whispers import get_random_reader_title
 from handlers.dashboard import send_dashboard
 from services.whisper_service import (
     ensure_user,
@@ -122,8 +123,9 @@ def _pick_reader_style(whisper_id: str, index: int) -> tuple:
 
 
 def _reader_button_label(whisper_id, index, name, badge) -> str:
-    """Combine medal, title, name, badge and a short line for the keyboard button."""
-    medal, title, line = _pick_reader_style(whisper_id, index)
+    """Combine medal, funny title, name, badge and a short line for the keyboard button."""
+    medal, _, line = _pick_reader_style(whisper_id, index)
+    title = get_random_reader_title()
     return f"{medal} {title} {name} | {badge} | {line}"
 
 
