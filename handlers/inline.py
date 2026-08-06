@@ -805,6 +805,7 @@ _CW_CONDITION_LABELS = {
     "time_window":    "⏰ الشرط: وقت",
     "subscription":   "📢 الشرط: اشتراك",
     "channel_member": "📢 الشرط: اشتراك",
+    "unlock_at":      "⏳ الشرط: فتح بعد وقت",
 }
 
 

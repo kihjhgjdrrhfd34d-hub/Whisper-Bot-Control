@@ -2,11 +2,13 @@ import hashlib
 import json
 import logging
 import os
+import time
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from handlers.keyboard_utils import cancel_button
 from database import upsert_user
 from database.envelope import create_draft, get_draft, update_draft_target
+from conditions.unlock_at import duration_seconds, parse_custom_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,19 @@ CONDITION_OPTIONS = [
     ("🔑 كلمة مرور", "password"),
     ("❓ سؤال وإجابة", "question"),
     ("🎯 اختيار من متعدد", "multiple_choice"),
+    ("⏳ فتح بعد وقت", "unlock_at"),
+]
+
+# ── Unlock-duration options for the unlock_at condition ────────────────
+# (label, duration_key). Extend here to add more presets.
+UNLOCK_DURATION_OPTIONS = [
+    ("بعد 5 دقائق", "5min"),
+    ("بعد 30 دقيقة", "30min"),
+    ("بعد ساعة", "1h"),
+    ("بعد 6 ساعات", "6h"),
+    ("بعد 12 ساعة", "12h"),
+    ("بعد 24 ساعة", "24h"),
+    ("📅 موعد مخصص (تاريخ ووقت)", "custom"),
 ]
 
 
@@ -59,6 +74,8 @@ def _condition_label(state: dict) -> str:
         return "🎯 محمية باختيار من متعدد"
     if "password" in conditions_data:
         return "🔐 محمية بكلمة مرور"
+    if "unlock_at" in conditions_data:
+        return "⏳ ستُفتح بعد وقت محدد"
     return "🔐 همسة مشروطة"
 
 
@@ -120,8 +137,67 @@ def register_conditional_whisper_handlers(bot: telebot.TeleBot, user_states: dic
                 "🎯 أرسل السؤال.",
                 reply_markup=_cancel_kb(),
             )
+        elif cond_type == "unlock_at":
+            bot.answer_callback_query(call.id)
+            user_states[user.id] = {"action": "cw_awaiting_unlock_duration"}
+            kb = InlineKeyboardMarkup(row_width=1)
+            for label, duration_key in UNLOCK_DURATION_OPTIONS:
+                kb.add(InlineKeyboardButton(label, callback_data=f"cw_unlock:{duration_key}"))
+            kb.add(cancel_button("cw_cancel"))
+            bot.send_message(
+                call.message.chat.id,
+                "⏳ *همسة مشروطة*\n\n"
+                "اختر مدة الفتح:",
+                parse_mode="Markdown",
+                reply_markup=kb,
+            )
         else:
             bot.answer_callback_query(call.id, "❌ شرط غير معروف.", show_alert=True)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("cw_unlock:"))
+    def cw_unlock(call: telebot.types.CallbackQuery):
+        user = call.from_user
+        duration_key = call.data.split(":", 1)[1]
+        state = user_states.get(user.id)
+        if not state or state.get("action") != "cw_awaiting_unlock_duration":
+            bot.answer_callback_query(call.id, "❌ انتهت الجلسة. ابدأ من جديد.", show_alert=True)
+            return
+
+        if duration_key == "custom":
+            bot.answer_callback_query(call.id)
+            user_states[user.id] = {"action": "cw_awaiting_unlock_custom"}
+            bot.send_message(
+                call.message.chat.id,
+                "📅 أرسل التاريخ والوقت بصيغة واضحة.\n\n"
+                "مثال:\n"
+                "• 2026-08-20 15:30\n"
+                "• 20/08/2026 15:30",
+                reply_markup=_cancel_kb(),
+            )
+            return
+
+        seconds = duration_seconds(duration_key)
+        if not seconds:
+            bot.answer_callback_query(call.id, "❌ مدة غير معروفة.", show_alert=True)
+            return
+
+        bot.answer_callback_query(call.id)
+        timestamp = int(time.time()) + seconds
+        user_states[user.id] = {
+            "action": "cw_awaiting_content",
+            "conditions_data": {
+                "unlock_at": {"timestamp": timestamp},
+            },
+        }
+        kb = InlineKeyboardMarkup()
+        kb.add(cancel_button("cw_cancel"))
+        bot.send_message(
+            call.message.chat.id,
+            "✅ تم تحديد وقت الفتح.\n\n"
+            "📝 أرسل نص الهمسة:",
+            parse_mode="Markdown",
+            reply_markup=kb,
+        )
 
     @bot.callback_query_handler(func=lambda c: c.data == "cw_cancel")
     def cw_cancel(call: telebot.types.CallbackQuery):
@@ -345,6 +421,51 @@ def handle_conditional_whisper_message(
             "📝 أرسل نص الهمسة:",
             parse_mode="Markdown",
             reply_markup=_cancel_kb(),
+        )
+        return True
+
+    if action == "cw_awaiting_unlock_custom":
+        raw = (msg.text or "").strip()
+        if not raw:
+            bot.send_message(msg.chat.id, "⚠️ أرسل التاريخ والوقت.", reply_markup=_cancel_kb())
+            return True
+        if raw.startswith("/"):
+            bot.send_message(msg.chat.id, "⚠️ الإدخال لا يمكن أن يبدأ بـ /", reply_markup=_cancel_kb())
+            return True
+
+        timestamp = parse_custom_datetime(raw)
+        if timestamp is None:
+            bot.send_message(
+                msg.chat.id,
+                "⚠️ صيغة التاريخ غير صحيحة.\n\n"
+                "استخدم صيغة مثل:\n"
+                "• 2026-08-20 15:30\n"
+                "• 20/08/2026 15:30",
+                reply_markup=_cancel_kb(),
+            )
+            return True
+        if timestamp <= int(time.time()):
+            bot.send_message(
+                msg.chat.id,
+                "⚠️ لا يمكن اختيار وقت في الماضي. اختر وقتاً مستقبلياً.",
+                reply_markup=_cancel_kb(),
+            )
+            return True
+
+        user_states[user.id] = {
+            "action": "cw_awaiting_content",
+            "conditions_data": {
+                "unlock_at": {"timestamp": timestamp},
+            },
+        }
+        kb = InlineKeyboardMarkup()
+        kb.add(cancel_button("cw_cancel"))
+        bot.send_message(
+            msg.chat.id,
+            "✅ تم تحديد وقت الفتح.\n\n"
+            "📝 أرسل نص الهمسة:",
+            parse_mode="Markdown",
+            reply_markup=kb,
         )
         return True
 
