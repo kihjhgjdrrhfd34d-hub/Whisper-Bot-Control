@@ -16,7 +16,7 @@ from telebot.util import escape
 from database import (
     get_whisper, can_read_whisper, record_whisper_read, reader_count,
     get_readers, get_curious_ones, upsert_user, get_setting, is_banned,
-    add_curious,
+    add_curious, count_user_reads,
 )
 
 
@@ -83,6 +83,25 @@ def record_read_and_check(whisper_id: str, user_id: int, display_name: str = "")
 def get_reader_display_name(reader: dict) -> str:
     """Get a display label for a reader (prefers first_name, falls back to @username)."""
     return reader.get("first_name") or (f"@{reader['username']}" if reader.get("username") else "مستخدم مجهول")
+
+
+def get_reader_badge(reader: dict) -> str:
+    """Return a badge based on the reader's total number of reads."""
+    count = count_user_reads(reader.get("user_id", 0))
+    if count >= 500:
+        return "💎 أسطورة الهمسات"
+    if count >= 200:
+        return "👑 قارئ مميز"
+    if count >= 50:
+        return "⚡ قارئ سريع"
+    if count >= 10:
+        return "🔥 قارئ نشيط"
+    return "🌱 قارئ جديد"
+
+
+def build_reader_identity(reader: dict) -> str:
+    """Combine the reader's badge with their display name."""
+    return f"{get_reader_badge(reader)} {get_reader_display_name(reader)}"
 
 
 def get_opener_name(whisper_id: str) -> str:

@@ -24,6 +24,7 @@ from services.whisper_service import (
     record_read_and_check,
     get_opener_name,
     get_user_display,
+    get_reader_badge,
     get_reader_display_name,
     build_first_one_notification,
     build_first_three_read_notification,
@@ -120,10 +121,10 @@ def _pick_reader_style(whisper_id: str, index: int) -> tuple:
     return medal, title, line
 
 
-def _reader_button_label(whisper_id, index, name) -> str:
-    """Combine medal, title, name and a short line for the keyboard button."""
+def _reader_button_label(whisper_id, index, name, badge) -> str:
+    """Combine medal, title, name, badge and a short line for the keyboard button."""
     medal, title, line = _pick_reader_style(whisper_id, index)
-    return f"{medal} {title} {name} | {line}"
+    return f"{medal} {title} {name} | {badge} | {line}"
 
 
 def _extract_condition_config(w_dict: dict, condition_type: str) -> dict | None:
@@ -175,8 +176,9 @@ def _build_opened_keyboard(whisper_id, readers=None):
             names_added = []
             for i, r in enumerate(readers[:max_names]):
                 name = get_reader_display_name(r)
+                badge = get_reader_badge(r)
                 names_added.append(name)
-                kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name), callback_data="noop"))
+                kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name, badge), callback_data="noop"))
             logger.info("[UI] _build_opened_keyboard names=%s whisper_id=%s wtype=%s",
                         names_added, whisper_id, wtype)
     return kb
@@ -269,13 +271,15 @@ def _update_group_keyboard(bot, whisper_id, w, call=None):
                 kb.add(InlineKeyboardButton(_BEFOREAD_LABEL, callback_data=f"read:{whisper_id}"))
             for i, r in enumerate(readers):
                 name = get_reader_display_name(r)
-                kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name), callback_data="noop"))
+                badge = get_reader_badge(r)
+                kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name, badge), callback_data="noop"))
 
         elif wtype == "first_one":
             kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
             for i, r in enumerate(readers):
                 name = get_reader_display_name(r)
-                kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name), callback_data="noop"))
+                badge = get_reader_badge(r)
+                kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name, badge), callback_data="noop"))
         else:  # custom — لا نعرض أسماء القراء ولا أزرار التفاعل
             kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
 

@@ -598,7 +598,8 @@ def get_readers(whisper_id):
             "SELECT wr.user_id, u.username, u.first_name "
             "FROM whisper_readers wr "
             "LEFT JOIN users u ON u.user_id=wr.user_id "
-            "WHERE wr.whisper_id=%s",
+            "WHERE wr.whisper_id=%s "
+            "ORDER BY wr.read_at ASC",
             (whisper_id,),
         ).fetchall()]
 
@@ -608,6 +609,15 @@ def reader_count(whisper_id):
         return conn.execute(
             "SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=%s",
             (whisper_id,),
+        ).fetchone()["count"]
+
+
+def count_user_reads(user_id):
+    """Total whispers a user has read across all whispers."""
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM whisper_readers WHERE user_id=%s",
+            (user_id,),
         ).fetchone()["count"]
 
 
