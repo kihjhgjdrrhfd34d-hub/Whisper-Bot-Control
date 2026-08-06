@@ -13,7 +13,7 @@ from database.wrapped_whispers import (
     get_available_characters, get_character,
     create_inline_package, delete_inline_package,
 )
-from handlers.keyboard_utils import back_button, page_indicator
+from handlers.keyboard_utils import back_button, page_indicator, section_header
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,26 @@ def _build_start_kb():
     return kb
 
 
+def _cover_brief(cover):
+    parts = [cover.get("description", "")]
+    if cover.get("category"):
+        parts.append(f"🏷️ {cover['category']}")
+    if cover.get("occasion"):
+        parts.append("🎉 " + "، ".join(cover["occasion"]))
+    return " · ".join(p for p in parts if p)[:60]
+
+
+def _cover_info_text(cover):
+    lines = [f"{cover.get('icon', '')} *{cover.get('name', '')}*"]
+    if cover.get("description"):
+        lines.append(f"📖 {cover['description']}")
+    if cover.get("category"):
+        lines.append(f"🏷️ الفئة: {cover['category']}")
+    if cover.get("occasion"):
+        lines.append(f"🎉 المناسبات: {', '.join(cover['occasion'])}")
+    return "\n".join(lines)
+
+
 def _build_cover_kb(user_id, page=0):
     xp = _get_user_xp(user_id)
     covers = get_available_covers(xp)
@@ -85,6 +105,26 @@ def _build_cover_kb(user_id, page=0):
 
     kb.add(back_button("ww_back_start"))
     return kb, total
+
+
+def _character_brief(char):
+    parts = [char.get("description", "")]
+    if char.get("style"):
+        parts.append(f"🎨 {char['style']}")
+    if char.get("category"):
+        parts.append(f"🏷️ {char['category']}")
+    return " · ".join(p for p in parts if p)[:60]
+
+
+def _character_info_text(char):
+    lines = [f"{char.get('icon', '')} *{char.get('name', '')}*"]
+    if char.get("description"):
+        lines.append(f"📖 {char['description']}")
+    if char.get("style"):
+        lines.append(f"🎨 الأسلوب: {char['style']}")
+    if char.get("category"):
+        lines.append(f"🏷️ الفئة: {char['category']}")
+    return "\n".join(lines)
 
 
 def _build_character_kb(user_id, page=0):
@@ -214,7 +254,7 @@ def register_wrapped_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
         bot.answer_callback_query(call.id)
         kb, total = _build_character_kb(user.id)
         _edit(bot, call.message.chat.id, call.message.message_id,
-              f"✅ {cover['icon']} {cover['name']}\n\n🎭 *اختر الشخصية*\n\n{_page_text(0, total)}\n\nاختر الشخصية التي تتحدث بها:",
+              f"✅ تم اختيار الغلاف:\n\n{_cover_info_text(cover)}\n\n🎭 *اختر الشخصية*\n\n{_page_text(0, total)}\n\nاختر الشخصية التي تتحدث بها:",
               kb)
 
     @bot.callback_query_handler(func=lambda c: c.data == "ww_back_cover")
@@ -261,7 +301,7 @@ def register_wrapped_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
         }
         bot.answer_callback_query(call.id)
         _edit(bot, call.message.chat.id, call.message.message_id,
-              f"✅ {char['icon']} {char['name']}\n\n✏️ *أرسل نص الهمسة الآن*\n\nاكتب النص الذي تريد إخفاءه داخل الهمسة:",
+              f"✅ تم اختيار الشخصية:\n\n{_character_info_text(char)}\n\n✏️ *أرسل نص الهمسة الآن*\n\nاكتب النص الذي تريد إخفاءه داخل الهمسة:",
               _build_text_input_kb())
 
     @bot.callback_query_handler(func=lambda c: c.data == "ww_back_char")
