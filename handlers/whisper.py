@@ -123,10 +123,10 @@ def _pick_reader_style(whisper_id: str, index: int) -> tuple:
 
 
 def _reader_button_label(whisper_id, index, name, badge) -> str:
-    """Combine medal, funny title, name, badge and a short line for the keyboard button."""
-    medal, _, line = _pick_reader_style(whisper_id, index)
+    """Short reader button label with name first and funny title."""
+    medal, _, _ = _pick_reader_style(whisper_id, index)
     title = get_random_reader_title()
-    return f"{medal} {title} {name} | {badge} | {line}"
+    return f"{name} {medal} {title}"
 
 
 def _extract_condition_config(w_dict: dict, condition_type: str) -> dict | None:
