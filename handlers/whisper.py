@@ -307,14 +307,38 @@ def _update_group_keyboard(bot, whisper_id, w, call=None):
             elif call and call.message and call.message.chat.id and call.message.message_id:
                 cid = call.message.chat.id
                 mid = call.message.message_id
-                logger.info("[UI] _update_group_keyboard editing via call.message chat_id=%s message_id=%s whisper_id=%s reader_count=%s",
-                            cid, mid, whisper_id, reader_count_val)
-                bot.edit_message_reply_markup(
-                    chat_id=cid,
-                    message_id=mid, reply_markup=kb,
-                )
-                logger.info("[UI] _update_group_keyboard OK via call.message chat_id=%s message_id=%s whisper_id=%s",
-                            cid, mid, whisper_id)
+                # A callback from a private DM (positive chat id) — e.g. the
+                # conditional-whisper reveal button — targets the DM message,
+                # NOT the group card. Fall back to the stored group coordinates
+                # so the group keyboard is updated with reader names, following
+                # the same path normal whispers use.
+                if cid > 0 and (inline_msg_id or (group_chat_id and group_msg_id)):
+                    if inline_msg_id:
+                        logger.info("[UI] _update_group_keyboard DM reveal -> DB inline_message_id=%s whisper_id=%s reader_count=%s",
+                                    inline_msg_id, whisper_id, reader_count_val)
+                        bot.edit_message_reply_markup(
+                            inline_message_id=inline_msg_id, reply_markup=kb,
+                        )
+                        logger.info("[UI] _update_group_keyboard OK DM reveal -> DB inline_message_id=%s whisper_id=%s",
+                                    inline_msg_id, whisper_id)
+                    elif group_chat_id and group_msg_id:
+                        logger.info("[UI] _update_group_keyboard DM reveal -> DB chat_id=%s message_id=%s whisper_id=%s reader_count=%s",
+                                    group_chat_id, group_msg_id, whisper_id, reader_count_val)
+                        bot.edit_message_reply_markup(
+                            chat_id=group_chat_id,
+                            message_id=group_msg_id, reply_markup=kb,
+                        )
+                        logger.info("[UI] _update_group_keyboard OK DM reveal -> DB chat_id=%s message_id=%s whisper_id=%s",
+                                    group_chat_id, group_msg_id, whisper_id)
+                else:
+                    logger.info("[UI] _update_group_keyboard editing via call.message chat_id=%s message_id=%s whisper_id=%s reader_count=%s",
+                                cid, mid, whisper_id, reader_count_val)
+                    bot.edit_message_reply_markup(
+                        chat_id=cid,
+                        message_id=mid, reply_markup=kb,
+                    )
+                    logger.info("[UI] _update_group_keyboard OK via call.message chat_id=%s message_id=%s whisper_id=%s",
+                                cid, mid, whisper_id)
             elif inline_msg_id:
                 logger.info("[UI] _update_group_keyboard editing via DB inline_message_id=%s whisper_id=%s reader_count=%s",
                             inline_msg_id, whisper_id, reader_count_val)
