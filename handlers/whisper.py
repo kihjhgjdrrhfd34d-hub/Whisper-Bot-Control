@@ -663,10 +663,20 @@ def handle_condition_answer_message(bot, msg, user_states) -> bool:
         unmet = [r for r in all_results if not r.passed]
         if not unmet:
             user_states.pop(user.id, None)
-            _complete_read_flow(
-                bot, call=None, user=user,
-                whisper_id=whisper_id, w=w_dict,
-                is_destructive=is_destructive_whisper(w),
+            # All conditions passed. Reveal the whisper through the SAME display
+            # path used by normal whispers (answer_callback_query + show_alert).
+            # The original "read" callback is long expired by the time the user
+            # types their answer (Telegram expires callback queries after ~10s),
+            # so a fresh button press is required to trigger a callback alert.
+            kb = InlineKeyboardMarkup(row_width=1)
+            kb.add(InlineKeyboardButton(
+                "🔒 اضغط للرؤية", callback_data=f"read:{whisper_id}",
+            ))
+            bot.send_message(
+                user.id,
+                "✅ *تم فتح الهمسة!*\n\nاضغط الزر لعرضها 👇",
+                parse_mode="Markdown",
+                reply_markup=kb,
             )
         else:
             for r in unmet:

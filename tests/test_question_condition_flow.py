@@ -152,6 +152,10 @@ class TestQuestionConditionReadFlow(unittest.TestCase):
         return [c.args[1] for c in bot.send_message.call_args_list
                 if len(c.args) >= 2 and isinstance(c.args[1], str)]
 
+    def _alerts_shown(self):
+        return [c.args[1] for c in bot.answer_callback_query.call_args_list
+                if len(c.args) >= 2 and isinstance(c.args[1], str)]
+
     def test_registry_has_question(self):
         from conditions import registry
         self.assertIn("question", set(registry.all().keys()))
@@ -168,11 +172,12 @@ class TestQuestionConditionReadFlow(unittest.TestCase):
 
         _dispatch_message(_make_message(READER_ID, "blue"))
         self.assertIsNone(user_states.get(READER_ID), "state must be popped")
+        self._read_callback(wid)
         from database import get_readers
         self.assertIn(READER_ID, [r["user_id"] for r in get_readers(wid)],
                       "reader must be recorded")
-        self.assertTrue(any("QUESTION SECRET" in t for t in self._texts_sent()),
-                        "whisper content must be delivered to the reader")
+        self.assertTrue(any("QUESTION SECRET" in t for t in self._alerts_shown()),
+                        "whisper content must be delivered as a callback alert")
 
     def test_wrong_answer_keeps_state_and_records_attempt(self):
         wid = self._create_question_whisper()
@@ -190,11 +195,12 @@ class TestQuestionConditionReadFlow(unittest.TestCase):
         self.assertTrue(any(not a["passed"] for a in attempts),
                         "failed attempt must be recorded")
 
-        # Correct answer afterwards unlocks the whisper.
+        # Correct answer afterwards unlocks the whisper via the reveal button.
         _dispatch_message(_make_message(READER_ID, "blue"))
         self.assertIsNone(user_states.get(READER_ID))
+        self._read_callback(wid)
         self.assertEqual(reader_count(wid), 1)
-        self.assertTrue(any("QUESTION SECRET" in t for t in self._texts_sent()))
+        self.assertTrue(any("QUESTION SECRET" in t for t in self._alerts_shown()))
 
     def test_retry_after_multiple_wrong_answers(self):
         wid = self._create_question_whisper()
@@ -206,6 +212,7 @@ class TestQuestionConditionReadFlow(unittest.TestCase):
 
         _dispatch_message(_make_message(READER_ID, "blue"))
         self.assertIsNone(user_states.get(READER_ID), "retry must unlock after correct answer")
+        self._read_callback(wid)
         from database import reader_count
         self.assertEqual(reader_count(wid), 1)
 
@@ -215,13 +222,13 @@ class TestQuestionConditionReadFlow(unittest.TestCase):
         self._read_callback(wid)
         _dispatch_message(_make_message(READER_ID, "blue"))
         self.assertIsNone(user_states.get(READER_ID))
+        self._read_callback(wid)
         from database import get_readers, reader_count
         self.assertEqual(reader_count(wid), 1)
 
         # Re-opening afterwards must not double-record the reader.
         self._start_view(wid)
         self._read_callback(wid)
-        _dispatch_message(_make_message(READER_ID, "blue"))
         self.assertEqual(reader_count(wid), 1, "reader must be recorded only once")
         readers = [r["user_id"] for r in get_readers(wid)]
         self.assertEqual(readers.count(READER_ID), 1)

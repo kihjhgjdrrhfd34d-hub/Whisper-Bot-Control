@@ -308,7 +308,11 @@ def start_cmd(msg: telebot.types.Message):
 
         w_dict = dict(whisper)
 
-        # ── Conditional whisper: render the condition interaction directly ──
+        # ── Conditional whisper: admins/owner may preview the content without
+        #    being counted; every other reader goes through the same card +
+        #    read button as normal whispers, so the content is always revealed
+        #    as a callback alert (answer_callback_query + show_alert=True)
+        #    instead of a plain text message. ──
         if w_dict.get("conditions_data"):
             from services.whisper_service import is_own_whisper
             if user.id in ADMIN_IDS or is_own_whisper(user.id, w_dict):
@@ -318,32 +322,6 @@ def start_cmd(msg: telebot.types.Message):
                     f"🤫 {content}" if content else "🤫 (محتوى فارغ)",
                 )
                 return
-
-            from conditions import ConditionUI, registry as condition_registry
-            cond_results = condition_registry.check_all(w_dict, user.id)
-            unmet = [r for r in cond_results if not r.passed]
-            if unmet:
-                result = unmet[0]
-                if result.requires_interaction:
-                    ConditionUI.render_interaction(
-                        None, bot, w_dict, result,
-                        user_states=user_states,
-                        user_id=user.id,
-                    )
-                else:
-                    bot.send_message(
-                        msg.chat.id,
-                        result.message or "❌ لم يتم استيفاء الشروط.",
-                    )
-                return
-
-            from services.whisper_service import is_destructive_whisper
-            from handlers.whisper import _complete_read_flow
-            _complete_read_flow(
-                bot, None, user, whisper_id_payload, w_dict,
-                is_destructive_whisper(w_dict),
-            )
-            return
 
         # ── Build whisper info card (metadata only, no content) ──────
         from database import get_user

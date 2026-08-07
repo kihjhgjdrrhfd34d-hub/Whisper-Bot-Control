@@ -222,12 +222,18 @@ class TestUnlockAtConditionReadFlow(unittest.TestCase):
         from database import reader_count
         self.assertEqual(reader_count(wid), 0, "no read before the unlock time")
         texts = self._texts_sent()
-        self.assertTrue(any("لم يحن وقت فتح هذه الهمسة بعد" in t for t in texts),
-                        "the not-yet message must be shown")
-        self.assertTrue(any("الوقت المتبقي" in t for t in texts),
-                        "the remaining time must be shown")
+        self.assertTrue(any("همسة" in t for t in texts),
+                        "/start view_ must send the whisper card")
         self.assertTrue(any("UNLOCK SECRET" in t for t in texts) is False,
                         "content must NOT be delivered before the unlock time")
+        # The read button reveals the not-yet message as a callback alert.
+        self._read_callback(wid)
+        alerts = self._alerts_shown()
+        self.assertTrue(any("لم يحن وقت فتح هذه الهمسة بعد" in t for t in alerts),
+                        "the not-yet message must be shown as a callback alert")
+        self.assertTrue(any("الوقت المتبقي" in t for t in alerts),
+                        "the remaining time must be shown")
+        self.assertEqual(reader_count(wid), 0, "no read before the unlock time")
 
     def test_not_yet_time_blocks_read_via_callback(self):
         wid = self._create_unlock_whisper()
@@ -241,11 +247,14 @@ class TestUnlockAtConditionReadFlow(unittest.TestCase):
     def test_time_reached_delivers_content(self):
         wid = self._create_unlock_whisper(timestamp=_past_timestamp())
         self._start_view(wid)
+        # The card is shown first; the read button delivers the content as a
+        # callback alert (same as normal whispers).
+        self._read_callback(wid)
         from database import get_readers
         readers = [r["user_id"] for r in get_readers(wid)]
         self.assertIn(READER_ID, readers, "reader must be recorded after the unlock time")
-        self.assertTrue(any("UNLOCK SECRET" in t for t in self._texts_sent()),
-                        "content must be delivered after the unlock time")
+        self.assertTrue(any("UNLOCK SECRET" in t for t in self._alerts_shown()),
+                        "content must be delivered as a callback alert after the unlock time")
 
     def test_time_reached_via_callback_delivers_content(self):
         wid = self._create_unlock_whisper(timestamp=_past_timestamp())

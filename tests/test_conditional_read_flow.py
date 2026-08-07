@@ -142,6 +142,10 @@ class TestConditionalReadFlow(unittest.TestCase):
         return [c.args[1] for c in bot.send_message.call_args_list
                 if len(c.args) >= 2 and isinstance(c.args[1], str)]
 
+    def _alerts_shown(self):
+        return [c.args[1] for c in bot.answer_callback_query.call_args_list
+                if len(c.args) >= 2 and isinstance(c.args[1], str)]
+
     def test_registry_is_initialized(self):
         """The condition registry must be auto-populated at import time."""
         from conditions import registry
@@ -175,13 +179,15 @@ class TestConditionalReadFlow(unittest.TestCase):
         )
 
         _dispatch_message(_make_message(READER_ID, "secret"))
-        # State cleared, reader recorded, content delivered.
+        # State cleared; the reader then presses the reveal button so the
+        # content is delivered as a callback alert (same as normal whispers).
         self.assertIsNone(user_states.get(READER_ID), "state must be popped")
+        self._read_callback(wid)
         from database import get_readers
         readers = [r["user_id"] for r in get_readers(wid)]
         self.assertIn(READER_ID, readers, "reader must be recorded")
-        self.assertTrue(any("SECRET CONTENT" in t for t in self._texts_sent()),
-                        "whisper content must be delivered to the reader")
+        self.assertTrue(any("SECRET CONTENT" in t for t in self._alerts_shown()),
+                        "whisper content must be delivered as a callback alert")
 
     def test_wrong_password_keeps_state_and_records_attempt(self):
         """Wrong password must not unlock the whisper, must keep the state,
@@ -202,11 +208,12 @@ class TestConditionalReadFlow(unittest.TestCase):
         self.assertTrue(any(not a["passed"] for a in attempts),
                         "failed attempt must be recorded")
 
-        # After the correct password the whisper unlocks.
+        # After the correct password the whisper unlocks via the reveal button.
         _dispatch_message(_make_message(READER_ID, "secret"))
         self.assertIsNone(user_states.get(READER_ID))
+        self._read_callback(wid)
         self.assertEqual(reader_count(wid), 1)
-        self.assertTrue(any("SECRET CONTENT" in t for t in self._texts_sent()))
+        self.assertTrue(any("SECRET CONTENT" in t for t in self._alerts_shown()))
 
     def test_sqlite_row_content_delivery(self):
         """A plain whisper read via callback passes a sqlite3.Row into
