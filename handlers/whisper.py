@@ -193,6 +193,31 @@ def _extract_condition_config(w_dict: dict, condition_type: str) -> dict | None:
     return None
 
 
+def _build_progress_buttons(whisper_id, w) -> list:
+    """Build a single non-interactive progress button for limited whispers.
+
+    Returns a list with one InlineKeyboardButton (noop) showing the
+    remaining slots and a filled-progress bar, or the completed
+    celebration once the limit is reached. An empty list when the whisper
+    has no reader limit (max_readers == 0).
+    """
+    limit = effective_max_readers(w)
+    if limit <= 0:
+        return []
+    filled = reader_count(whisper_id)
+    if filled > limit:
+        filled = limit
+    empty = limit - filled
+    bar = "▰" * filled + "▱" * empty
+    if filled >= limit:
+        label = f"🎉 اكتمل عدد القرّاء {bar}"
+    else:
+        label = f"👥 المتبقي: {empty} من {limit} {bar}"
+    return [
+        InlineKeyboardButton(label, callback_data="noop"),
+    ]
+
+
 def _build_opened_keyboard(whisper_id, readers=None):
     w = get_whisper(whisper_id)
     if not w:
@@ -211,6 +236,8 @@ def _build_opened_keyboard(whisper_id, readers=None):
     label = _OPENED_LABEL if opened else _BEFOREAD_LABEL
     cb = "noop" if opened else f"read:{whisper_id}"
     kb.add(InlineKeyboardButton(label, callback_data=cb))
+    for pbtn in _build_progress_buttons(whisper_id, w):
+        kb.add(pbtn)
     if readers and limit > 0:
         max_names = limit
         names_added = []
@@ -310,6 +337,8 @@ def _update_group_keyboard(bot, whisper_id, w, call=None):
                 kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
             else:
                 kb.add(InlineKeyboardButton(_BEFOREAD_LABEL, callback_data=f"read:{whisper_id}"))
+            for pbtn in _build_progress_buttons(whisper_id, w):
+                kb.add(pbtn)
             for i, r in enumerate(readers[:limit]):
                 name = get_reader_display_name(r)
                 badge = get_reader_badge(r)
@@ -317,6 +346,8 @@ def _update_group_keyboard(bot, whisper_id, w, call=None):
 
         elif limit == 1:  # first_one
             kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
+            for pbtn in _build_progress_buttons(whisper_id, w):
+                kb.add(pbtn)
             for i, r in enumerate(readers[:limit]):
                 name = get_reader_display_name(r)
                 badge = get_reader_badge(r)

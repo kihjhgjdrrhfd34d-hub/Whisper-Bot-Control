@@ -69,12 +69,15 @@ class TestOpenOnceTextFirstOne(unittest.TestCase):
         # Verify the keyboard builder produces the opened keyboard
         readers = db.get_readers(self.wid)
         kb = _build_opened_keyboard(self.wid, readers=readers)
-        # Row 0: opened label, Row 1: reader name (Bob)
-        self.assertEqual(len(kb.keyboard), 2)
+        # Row 0: opened label, Row 1: completed progress, Row 2: reader name (Bob)
+        self.assertEqual(len(kb.keyboard), 3)
         btn = kb.keyboard[0][0]
         self.assertEqual(btn.text, _OPENED_LABEL)
         self.assertEqual(btn.callback_data, "noop")
-        name_btn = kb.keyboard[1][0]
+        completed_btn = kb.keyboard[1][0]
+        self.assertEqual(completed_btn.text, "🎉 اكتمل عدد القرّاء ▰")
+        self.assertEqual(completed_btn.callback_data, "noop")
+        name_btn = kb.keyboard[2][0]
         self.assertIn("Bob", name_btn.text)
 
     def test_stored_group_message_coords(self):
@@ -209,12 +212,15 @@ class TestOpenOnceMediaWhisper(unittest.TestCase):
 
         readers = db.get_readers(self.wid)
         kb = _build_opened_keyboard(self.wid, readers=readers)
-        # Row 0: opened label, Row 1: reader name (Bob)
-        self.assertEqual(len(kb.keyboard), 2)
+        # Row 0: opened label, Row 1: completed progress, Row 2: reader name (Bob)
+        self.assertEqual(len(kb.keyboard), 3)
         btn = kb.keyboard[0][0]
         self.assertEqual(btn.text, _OPENED_LABEL)
         self.assertEqual(btn.callback_data, "noop")
-        name_btn = kb.keyboard[1][0]
+        completed_btn = kb.keyboard[1][0]
+        self.assertEqual(completed_btn.text, "🎉 اكتمل عدد القرّاء ▰")
+        self.assertEqual(completed_btn.callback_data, "noop")
+        name_btn = kb.keyboard[2][0]
         self.assertIn("Bob", name_btn.text)
 
 class TestDeepLinkOpenOnce(unittest.TestCase):
