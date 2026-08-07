@@ -42,6 +42,7 @@ def _get_type_label(whisper_type: str) -> str:
         "first_one": "لأول شخص ☝️",
         "everyone": "للجميع 🌍",
         "first_three": "لأول 3 👥",
+        "first_five": "لأول 5 👥",
         "custom": "مخصصة 🎯",
     }
     return labels.get(whisper_type, whisper_type)

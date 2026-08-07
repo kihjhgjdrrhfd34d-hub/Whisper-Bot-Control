@@ -64,6 +64,8 @@ def _build_stats_text(first_name, s):
         type_lines.append(f"  ☝️ لأول شخص: `{s['type_first_one']}`")
     if s["type_first_three"]:
         type_lines.append(f"  3️⃣ لأول 3: `{s['type_first_three']}`")
+    if s["type_first_five"]:
+        type_lines.append(f"  👥 لأول 5: `{s['type_first_five']}`")
     if s["type_custom"]:
         type_lines.append(f"  🎯 مخصصة: `{s['type_custom']}`")
 

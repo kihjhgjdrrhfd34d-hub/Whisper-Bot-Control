@@ -93,9 +93,12 @@ def _build_type_kb():
     )
     kb.add(
         InlineKeyboardButton("👥 لأول 3", callback_data="pkg_type:first_three"),
-        InlineKeyboardButton("🎯 مخصصة", callback_data="pkg_type:custom"),
+        InlineKeyboardButton("👥 لأول 5", callback_data="pkg_type:first_five"),
     )
-    kb.add(back_button("pkg_back_chat"))
+    kb.add(
+        InlineKeyboardButton("🎯 مخصصة", callback_data="pkg_type:custom"),
+        back_button("pkg_back_chat"),
+    )
     return kb
 
 
@@ -105,6 +108,7 @@ def _build_type_kb_with_maxreaders():
         ("first_one", 1, "☝️ لأول شخص"),
         ("everyone", 0, "🌍 للجميع"),
         ("first_three", 3, "👥 لأول 3"),
+        ("first_five", 5, "👥 لأول 5"),
     ]:
         kb.add(InlineKeyboardButton(label, callback_data=f"pkg_do:{wtype}:{mr}"))
     kb.add(back_button("pkg_back_chat"))
@@ -580,7 +584,7 @@ def register_package_flow_handlers(bot: telebot.TeleBot, user_states: dict):
 
 
 def _finalize_package(bot, user, call, wtype, user_states):
-    mr = 1 if wtype == "first_one" else (3 if wtype == "first_three" else 0)
+    mr = 1 if wtype == "first_one" else (3 if wtype == "first_three" else (5 if wtype == "first_five" else 0))
     update_package_type(user.id, wtype, target_users=[], max_readers=mr)
     _do_finalize(bot, user, call.message.chat.id, call.message.message_id, user_states)
 
@@ -631,6 +635,7 @@ def _do_finalize(bot, user, chat_id, message_id, user_states):
         "first_one": "لأول شخص ☝️",
         "everyone": "للجميع 🌍",
         "first_three": "لأول 3 👥",
+        "first_five": "لأول 5 👥",
         "custom": "مخصصة 🎯",
     }
     type_label = type_labels.get(wtype, wtype)

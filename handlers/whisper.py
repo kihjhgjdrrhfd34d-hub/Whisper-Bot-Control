@@ -13,9 +13,9 @@ from database import (
     create_whisper,
     check_whisper_rate_limit, record_whisper_timestamp, SPAM_BLOCK_MESSAGE,
     update_whisper_group_message,
+    effective_max_readers,
 )
 from conditions import ConditionUI, registry as condition_registry
-from database.wrapped_whispers import get_random_reader_title
 from handlers.dashboard import send_dashboard
 from services.whisper_service import (
     ensure_user,
@@ -50,7 +50,7 @@ def _get_keyboard_lock(whisper_id: str) -> threading.Lock:
     return _KEYBOARD_LOCKS.setdefault(whisper_id, threading.Lock())
 
 
-_READER_MEDALS = {0: "🥇", 1: "🥈", 2: "🥉"}
+_READER_MEDALS = {0: "🥇", 1: "🥈", 2: "🥉", 3: "🏅", 4: "🎖️"}
 
 FIRST_READER_TITLES = [
     "🚀 الصاروخ",
@@ -101,10 +101,44 @@ THIRD_READER_LINES = [
     "دخل في الوقت المناسب",
 ]
 
+FOURTH_READER_TITLES = [
+    "🎲 المحظوظ",
+    "🌟 المتألق",
+    "👻 الشبح",
+    "🤫 الصامت",
+    "🌀 الغامض",
+]
+
+FOURTH_READER_LINES = [
+    "جاء في اللحظة الحاسمة",
+    "كسر التوقعات",
+    "ظهر من العدم",
+    "أكمل الرباعي",
+    "خطف البطاقة الأخيرة",
+]
+
+FIFTH_READER_TITLES = [
+    "🌙 ساهر الليل",
+    "🍂 الملاحق الأخير",
+    "✨ نجم الختام",
+    "🧲 مغناطيس الحظ",
+    "🎭 ختام المسرحية",
+]
+
+FIFTH_READER_LINES = [
+    "أكمل الخماسي",
+    "أغلق القائمة بثبات",
+    "لم يتأخر أبداً",
+    "حسم المركز الأخير",
+    "أسدل الستار",
+]
+
 _RANK_STYLES = {
     0: (FIRST_READER_TITLES, FIRST_READER_LINES),
     1: (SECOND_READER_TITLES, SECOND_READER_LINES),
     2: (THIRD_READER_TITLES, THIRD_READER_LINES),
+    3: (FOURTH_READER_TITLES, FOURTH_READER_LINES),
+    4: (FIFTH_READER_TITLES, FIFTH_READER_LINES),
 }
 
 
@@ -128,10 +162,14 @@ def _pick_reader_style(whisper_id: str, index: int) -> tuple:
 
 
 def _reader_button_label(whisper_id, index, name, badge) -> str:
-    """Short reader button label with name first and funny title."""
-    medal, _, _ = _pick_reader_style(whisper_id, index)
-    title = get_random_reader_title()
-    return f"{name} {medal} {title}"
+    """Short reader button label with a stable, per-whisper funny title.
+
+    The title is picked deterministically from whisper_id + reader index
+    (never random), so it stays fixed for the whole life of a whisper and
+    only changes for a different whisper.
+    """
+    medal, title, _ = _pick_reader_style(whisper_id, index)
+    return f"{medal} {name} — {title}"
 
 
 def _extract_condition_config(w_dict: dict, condition_type: str) -> dict | None:
@@ -160,6 +198,7 @@ def _build_opened_keyboard(whisper_id, readers=None):
     if not w:
         return None
     wtype = w["whisper_type"]
+    limit = effective_max_readers(w)
 
     if wtype == "everyone":
         kb = InlineKeyboardMarkup(row_width=2)
@@ -168,26 +207,20 @@ def _build_opened_keyboard(whisper_id, readers=None):
         return kb
 
     kb = InlineKeyboardMarkup(row_width=2)
-    is_first_three_unlocked = wtype == "first_three" and len(readers) < 3
-    label = _BEFOREAD_LABEL if is_first_three_unlocked else _OPENED_LABEL
-    cb = f"read:{whisper_id}" if is_first_three_unlocked else "noop"
+    opened = limit <= 1 or len(readers) >= limit
+    label = _OPENED_LABEL if opened else _BEFOREAD_LABEL
+    cb = "noop" if opened else f"read:{whisper_id}"
     kb.add(InlineKeyboardButton(label, callback_data=cb))
-    if readers:
-        show_names = False
-        if wtype == "first_one":
-            show_names = True
-        elif wtype == "first_three" and len(readers) > 0:
-            show_names = True
-        if show_names:
-            max_names = 3 if wtype == "first_three" else len(readers)
-            names_added = []
-            for i, r in enumerate(readers[:max_names]):
-                name = get_reader_display_name(r)
-                badge = get_reader_badge(r)
-                names_added.append(name)
-                kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name, badge), callback_data="noop"))
-            logger.info("[UI] _build_opened_keyboard names=%s whisper_id=%s wtype=%s",
-                        names_added, whisper_id, wtype)
+    if readers and limit > 0:
+        max_names = limit
+        names_added = []
+        for i, r in enumerate(readers[:max_names]):
+            name = get_reader_display_name(r)
+            badge = get_reader_badge(r)
+            names_added.append(name)
+            kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name, badge), callback_data="noop"))
+        logger.info("[UI] _build_opened_keyboard names=%s whisper_id=%s wtype=%s",
+                    names_added, whisper_id, wtype)
     return kb
 
 
@@ -258,6 +291,7 @@ def _update_group_keyboard(bot, whisper_id, w, call=None):
         w = dict(w)
 
     wtype = w["whisper_type"]
+    limit = effective_max_readers(w)
 
     lock = _get_keyboard_lock(whisper_id)
     with lock:
@@ -270,20 +304,20 @@ def _update_group_keyboard(bot, whisper_id, w, call=None):
             kb.add(InlineKeyboardButton(_BEFOREAD_LABEL, callback_data=f"read:{whisper_id}"))
             _add_reaction_buttons(kb, whisper_id)
 
-        elif wtype == "first_three":
+        elif limit > 1:  # first_three / first_five / أي نوع محدود مستقبلاً
             actual_count = reader_count(whisper_id)
-            if actual_count >= 3:
+            if actual_count >= limit:
                 kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
             else:
                 kb.add(InlineKeyboardButton(_BEFOREAD_LABEL, callback_data=f"read:{whisper_id}"))
-            for i, r in enumerate(readers):
+            for i, r in enumerate(readers[:limit]):
                 name = get_reader_display_name(r)
                 badge = get_reader_badge(r)
                 kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name, badge), callback_data="noop"))
 
-        elif wtype == "first_one":
+        elif limit == 1:  # first_one
             kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
-            for i, r in enumerate(readers):
+            for i, r in enumerate(readers[:limit]):
                 name = get_reader_display_name(r)
                 badge = get_reader_badge(r)
                 kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name, badge), callback_data="noop"))
@@ -423,9 +457,10 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
             logger.error("[ACCESS] unknown whisper_id=%s user_id=%s wtype=%s", whisper_id, user.id, w.get("whisper_type", "?"))
 
         if reason == "taken":
-            if w["whisper_type"] == "first_one":
+            limit = effective_max_readers(w)
+            if limit == 1:
                 msg = msgs["taken_one"]
-            elif w["whisper_type"] == "first_three":
+            elif limit > 1:
                 msg = msgs["taken_three"]
             else:
                 msg = msgs["taken"]
@@ -494,21 +529,19 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
             wtype_str = w["whisper_type"] if isinstance(w, dict) else dict(w).get("whisper_type", "?")
             logger.info("[DESTROY] _maybe_self_destruct whisper_id=%s type=%s reader_count_val=%d",
                         whisper_id, wtype_str, reader_count_val)
-            if w["whisper_type"] == "first_one":
-                logger.info("[DESTROY] first_one lock+destroy whisper_id=%s", whisper_id)
-                lock_whisper(whisper_id)
-                _destroy_whisper_message(call, bot)
-                logger.info("[DESTROY] first_one complete whisper_id=%s", whisper_id)
-            elif w["whisper_type"] == "first_three" and reader_count_val >= 3:
-                logger.info("[DESTROY] first_three lock+destroy whisper_id=%s readers=%d", whisper_id, reader_count_val)
-                lock_whisper(whisper_id)
-                _destroy_whisper_message(call, bot)
-                logger.info("[DESTROY] first_three complete whisper_id=%s", whisper_id)
-            elif w["whisper_type"] == "everyone":
+            if w["whisper_type"] == "everyone":
                 logger.info("[DESTROY] everyone lock+destroy whisper_id=%s", whisper_id)
                 lock_whisper(whisper_id)
                 _destroy_whisper_message(call, bot)
                 logger.info("[DESTROY] everyone complete whisper_id=%s", whisper_id)
+            else:
+                limit = effective_max_readers(w)
+                if limit > 0 and reader_count_val >= limit:
+                    logger.info("[DESTROY] limited type lock+destroy whisper_id=%s type=%s readers=%d limit=%d",
+                                whisper_id, wtype_str, reader_count_val, limit)
+                    lock_whisper(whisper_id)
+                    _destroy_whisper_message(call, bot)
+                    logger.info("[DESTROY] limited type complete whisper_id=%s", whisper_id)
 
     def _notify_sender_first_three_read():
         text = build_first_three_read_notification(user, w)
@@ -577,6 +610,7 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
             wtype_label = {
                 "first_one": "همسة لأول شخص",
                 "first_three": "همسة لأول 3 أشخاص",
+                "first_five": "👥 همسة لأول 5 أشخاص",
                 "everyone": "همسة للجميع",
                 "contact_whisper": "همسة تواصل",
             }.get(rw.get("whisper_type", ""), rw.get("whisper_type", ""))
@@ -602,8 +636,9 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
     if _handle_destructive_everyone():
         return
 
-    if w["whisper_type"] == "first_three":
-        logger.info("[READ] type=first_three whisper_id=%s", whisper_id)
+    if effective_max_readers(w) > 1:
+        logger.info("[READ] type=%s (limit=%d) whisper_id=%s",
+                    w["whisper_type"], effective_max_readers(w), whisper_id)
 
     is_new_read, is_first_ever = record_read_and_check(whisper_id, user.id)
 
@@ -625,9 +660,10 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
         _update_group_keyboard(bot, whisper_id, w, call=call)
         _send_reply_invitation(whisper_id)
         _maybe_self_destruct(is_new_read, reader_count_val)
-        if w["whisper_type"] == "first_three":
+        limit = effective_max_readers(w)
+        if limit > 1:
             _notify_sender_first_three_read()
-        if w["whisper_type"] not in ("first_one", "first_three", "everyone", "contact_whisper"):
+        if limit == 0 and w["whisper_type"] not in ("everyone", "contact_whisper"):
             logger.debug("[NOTIFY] calling _notify_sender_reader_name type=%s reader_count=%d whisper_id=%s",
                          w["whisper_type"], reader_count_val, whisper_id)
             _notify_sender_reader_name(reader_count_val)
@@ -637,7 +673,7 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
             return
     logger.info("[READ_NOTIFY] whisper_type=%s sender_id=%s reader_id=%s is_new_read=%s",
                 w["whisper_type"], w["sender_id"], user.id, is_new_read)
-    if w["whisper_type"] not in ("first_three",):
+    if not (effective_max_readers(w) > 1):
         if _notify_sender_first_one(is_first_ever):
             return
         _send_read_receipt(is_new_read)
@@ -1062,11 +1098,12 @@ def _register_callback_handlers(bot, user_states):
                     call.id, "🔒 الهمسة مقفلة حالياً من قِبل صاحبها.", show_alert=True
                 )
             elif reason == "taken":
-                if w["whisper_type"] == "first_one":
+                limit = effective_max_readers(w)
+                if limit == 1:
                     bot.answer_callback_query(
                         call.id, "تم فتح هذه الهمسة بواسطة أول شخص.", show_alert=True,
                     )
-                elif w["whisper_type"] == "first_three":
+                elif limit > 1:
                     bot.answer_callback_query(
                         call.id, "اكتمل عدد القراء لهذه الهمسة.", show_alert=True,
                     )
@@ -1148,22 +1185,19 @@ def _register_callback_handlers(bot, user_states):
                 wtype_str = w["whisper_type"] if isinstance(w, dict) else dict(w).get("whisper_type", "?")
                 logger.info("[DESTROY] _maybe_self_destruct whisper_id=%s type=%s reader_count_val=%d",
                             whisper_id, wtype_str, reader_count_val)
-                if w["whisper_type"] == "first_one":
-                    logger.info("[DESTROY] first_one lock+destroy whisper_id=%s", whisper_id)
-                    lock_whisper(whisper_id)
-                    _destroy_whisper_message(call, bot)
-                    logger.info("[DESTROY] first_one complete whisper_id=%s", whisper_id)
-                elif w["whisper_type"] == "first_three" and reader_count_val >= 3:
-                    logger.info("[DESTROY] first_three lock+destroy whisper_id=%s readers=%d",
-                                whisper_id, reader_count_val)
-                    lock_whisper(whisper_id)
-                    _destroy_whisper_message(call, bot)
-                    logger.info("[DESTROY] first_three complete whisper_id=%s", whisper_id)
-                elif w["whisper_type"] == "everyone":
+                if w["whisper_type"] == "everyone":
                     logger.info("[DESTROY] everyone lock+destroy whisper_id=%s", whisper_id)
                     lock_whisper(whisper_id)
                     _destroy_whisper_message(call, bot)
                     logger.info("[DESTROY] everyone complete whisper_id=%s", whisper_id)
+                else:
+                    limit = effective_max_readers(w)
+                    if limit > 0 and reader_count_val >= limit:
+                        logger.info("[DESTROY] limited type lock+destroy whisper_id=%s type=%s readers=%d limit=%d",
+                                    whisper_id, wtype_str, reader_count_val, limit)
+                        lock_whisper(whisper_id)
+                        _destroy_whisper_message(call, bot)
+                        logger.info("[DESTROY] limited type complete whisper_id=%s", whisper_id)
 
         def _notify_sender_first_one(w: dict, is_first_ever: bool) -> bool:
             if w["whisper_type"] != "first_one" or not is_first_ever:
@@ -1223,6 +1257,7 @@ def _register_callback_handlers(bot, user_states):
                 wtype_label = {
                     "first_one": "همسة لأول شخص",
                     "first_three": "همسة لأول 3 أشخاص",
+                    "first_five": "👥 همسة لأول 5 أشخاص",
                     "everyone": "همسة للجميع",
                     "contact_whisper": "همسة تواصل",
                 }.get(w.get("whisper_type", ""), w.get("whisper_type", ""))

@@ -398,6 +398,7 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             "everyone": "للجميع",
             "first_one": "لأول شخص",
             "first_three": "لأول ثلاثة",
+            "first_five": "لأول خمسة",
             "custom": "مخصص",
         }
         type_label = type_labels.get(s["most_used_whisper_type"], s["most_used_whisper_type"] or "—")
@@ -442,6 +443,7 @@ def register_admin_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             f"├ اليوم: `{s['whispers_today']}`\n"
             f"├ first_one: `{s['type_first_one']}`\n"
             f"├ first_three: `{s['type_first_three']}`\n"
+            f"├ first_five: `{s['type_first_five']}`\n"
             f"├ everyone: `{s['type_everyone']}`\n"
             f"└ custom: `{s['type_custom']}`\n\n"
             "👀 *القراءة:*\n"

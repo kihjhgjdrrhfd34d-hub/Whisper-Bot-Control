@@ -342,6 +342,7 @@ def start_cmd(msg: telebot.types.Message):
             "everyone": "🌍 للجميع",
             "first_one": "☝️ لأول شخص",
             "first_three": "3️⃣ لأول 3 أشخاص",
+            "first_five": "5️⃣ لأول 5 أشخاص",
             "custom": "🎯 مخصصة",
         }
         wtype_label = _escape_md(wtype_labels.get(w_dict["whisper_type"], w_dict["whisper_type"]))

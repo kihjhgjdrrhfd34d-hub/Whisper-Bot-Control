@@ -9,6 +9,39 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Reader-limit helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Built-in defaults for known limited types. Only used as a backward-compatible
+# fallback when a row's max_readers column is 0 (older code created
+# first_one / first_three whispers without setting max_readers).
+_TYPE_MAX_READERS_DEFAULT = {
+    "first_one": 1,
+    "first_three": 3,
+    "first_five": 5,
+}
+
+
+def effective_max_readers(w: dict) -> int:
+    """Return the reader limit for a whisper row.
+
+    Prefers the stored ``max_readers`` column so any future type only needs to
+    store its own limit (no per-type conditionals). Falls back to the built-in
+    default for known limited types so legacy rows created without max_readers
+    keep their original behavior. Unrestricted types (everyone, custom, …)
+    resolve to 0.
+    """
+    w = dict(w)
+    try:
+        max_r = int(w.get("max_readers") or 0)
+    except (TypeError, ValueError):
+        max_r = 0
+    if max_r > 0:
+        return max_r
+    return int(_TYPE_MAX_READERS_DEFAULT.get(w.get("whisper_type", ""), 0))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Connection helper
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -692,43 +725,40 @@ def record_whisper_read(whisper_id: str, user_id: int) -> bool:
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         w = conn.execute(
-            "SELECT whisper_type FROM whispers WHERE whisper_id=?",
+            "SELECT whisper_type, max_readers FROM whispers WHERE whisper_id=?",
             (whisper_id,),
         ).fetchone()
         wtype = w["whisper_type"] if w else None
+        # Nonexistent whispers fall through to the unrestricted insert path,
+        # which raises a foreign-key error (historical behavior).
+        limit = effective_max_readers(dict(w)) if w else 0
 
-        if wtype == "first_three":
+        if limit > 0:
+            # Limited types (first_one / first_three / first_five / future):
+            # insert conditionally so concurrent requests can never exceed the
+            # reader limit. limit == 1 keeps the historical first_one behavior
+            # (no auto-lock — gating is handled by can_read_whisper).
             conn.execute(
                 "INSERT INTO whisper_readers (whisper_id, user_id) "
                 "SELECT ?, ? "
-                "WHERE (SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=?) < 3",
-                (whisper_id, user_id, whisper_id),
+                "WHERE (SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=?) < ?",
+                (whisper_id, user_id, whisper_id, limit),
             )
             inserted = conn.execute("SELECT changes()").fetchone()[0]
             if not inserted:
                 conn.commit()
                 return False
 
-            count = conn.execute(
-                "SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=?",
-                (whisper_id,),
-            ).fetchone()[0]
-            if count >= 3:
-                conn.execute(
-                    "UPDATE whispers SET is_locked=1 WHERE whisper_id=?",
+            if limit > 1:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=?",
                     (whisper_id,),
-                )
-        elif wtype == "first_one":
-            conn.execute(
-                "INSERT INTO whisper_readers (whisper_id, user_id) "
-                "SELECT ?, ? "
-                "WHERE (SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=?) < 1",
-                (whisper_id, user_id, whisper_id),
-            )
-            inserted = conn.execute("SELECT changes()").fetchone()[0]
-            if not inserted:
-                conn.commit()
-                return False
+                ).fetchone()[0]
+                if count >= limit:
+                    conn.execute(
+                        "UPDATE whispers SET is_locked=1 WHERE whisper_id=?",
+                        (whisper_id,),
+                    )
         else:
             conn.execute(
                 "INSERT OR IGNORE INTO whisper_readers (whisper_id, user_id) VALUES (?, ?)",
@@ -811,7 +841,10 @@ def can_read_whisper(whisper_id, user_id):
             return True, "sender"
         return True, "allowed"
 
-    if wtype == "first_one":
+    limit = effective_max_readers(w)
+
+    if limit == 1:
+        # first_one style: exactly one reader (plus the sender).
         if w["sender_id"] == user_id:
             return True, "sender"
         if w["is_locked"]:
@@ -822,9 +855,10 @@ def can_read_whisper(whisper_id, user_id):
             return True, "allowed"
         return False, "taken"
 
-    if wtype == "first_three":
+    if limit > 1:
+        # first_three / first_five / any future limited type.
         readers = get_readers(whisper_id)
-        if len(readers) < 3 or any(r["user_id"] == user_id for r in readers):
+        if len(readers) < limit or any(r["user_id"] == user_id for r in readers):
             if w["is_locked"]:
                 return False, "locked"
             return True, "allowed"
@@ -1079,6 +1113,7 @@ def get_user_stats(user_id):
             "type_everyone":   types.get("everyone", 0),
             "type_first_one":  types.get("first_one", 0),
             "type_first_three": types.get("first_three", 0),
+            "type_first_five": types.get("first_five", 0),
             "type_custom":     types.get("custom", 0),
         }
 
@@ -1201,6 +1236,7 @@ def get_detailed_stats():
             "type_everyone":        types.get("everyone", 0),
             "type_first_one":       types.get("first_one", 0),
             "type_first_three":     types.get("first_three", 0),
+            "type_first_five":      types.get("first_five", 0),
             "type_custom":          types.get("custom", 0),
             "total_reads":          total_reads,
             "avg_reads_per_whisper": avg_reads,

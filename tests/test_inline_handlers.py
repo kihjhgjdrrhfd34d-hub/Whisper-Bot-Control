@@ -37,7 +37,7 @@ class TestInlineConstants(unittest.TestCase):
 
     def test_four_options_count(self):
         from handlers.inline import FOUR_OPTIONS
-        self.assertEqual(len(FOUR_OPTIONS), 4)
+        self.assertEqual(len(FOUR_OPTIONS), 5)
 
     def test_four_options_contain_all_types(self):
         from handlers.inline import FOUR_OPTIONS
@@ -45,6 +45,7 @@ class TestInlineConstants(unittest.TestCase):
         self.assertIn("first_one", types)
         self.assertIn("everyone", types)
         self.assertIn("first_three", types)
+        self.assertIn("first_five", types)
         self.assertIn("custom", types)
 
     def test_four_options_have_valid_max_readers(self):
@@ -54,12 +55,14 @@ class TestInlineConstants(unittest.TestCase):
                 self.assertEqual(max_readers, 1)
             elif wtype == "first_three":
                 self.assertEqual(max_readers, 3)
+            elif wtype == "first_five":
+                self.assertEqual(max_readers, 5)
             elif wtype == "everyone":
                 self.assertEqual(max_readers, 0)
 
     def test_destructive_options_count(self):
         from handlers.inline import DESTRUCTIVE_OPTIONS
-        self.assertEqual(len(DESTRUCTIVE_OPTIONS), 3)
+        self.assertEqual(len(DESTRUCTIVE_OPTIONS), 4)
 
     def test_destructive_options_contain_expected_types(self):
         from handlers.inline import DESTRUCTIVE_OPTIONS

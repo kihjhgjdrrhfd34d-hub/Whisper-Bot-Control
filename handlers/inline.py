@@ -68,6 +68,17 @@ logger = logging.getLogger(__name__)
 # Whisper types that receive a control-panel DM after being sent
 CONTROL_PANEL_TYPES = {"custom"}
 
+# Canonical type → reader limit map used when creating whispers inline.
+# Keep in sync with the option lists below; any future type only needs an
+# entry here (plus a row in the relevant options list).
+_TYPE_MAX_READERS = {
+    "first_one": 1,
+    "everyone": 0,
+    "first_three": 3,
+    "first_five": 5,
+    "custom": 0,
+}
+
 
 def _read_button(whisper_id: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=1)
@@ -81,12 +92,14 @@ WRAPPED_TYPE_OPTIONS = [
     ("first_one",   1, "☝️ لأول شخص",          "يقرأها أول شخص فقط"),
     ("everyone",    0, "🌍 للجميع",             "يمكن لأي شخص قراءتها"),
     ("first_three", 3, "👥 لأول 3 أشخاص",      "يقرأها أول 3 أشخاص فقط"),
+    ("first_five",  5, "👥 لأول 5 أشخاص",      "يقرأها أول 5 أشخاص فقط"),
     ("custom",      0, "🎯 مخصصة",             "مخصصة لشخص معين (عدّل الأهداف من لوحة التحكم)"),
 ]
 
 WRAPPED_DESTRUCTIVE_OPTIONS = [
     ("first_one",   1, "💣 تدميرية لأول شخص",          "تًحذف بعد قراءتها"),
     ("first_three", 3, "💣 تدميرية لأول 3 أشخاص",      "تُحذف بعد ثالث قارئ"),
+    ("first_five",  5, "💣 تدميرية لأول 5 أشخاص",      "تُحذف بعد خامس قارئ"),
     ("everyone",    0, "💣 تدميرية للجميع",            "تظهر كتنبيه ولا تتكرر"),
 ]
 
@@ -96,6 +109,7 @@ WRAPPED_DESTRUCTIVE_OPTIONS = [
 CONDITIONAL_TYPE_OPTIONS = [
     ("first_one",   1, "🔐 همسة مشروطة لأول شخص",      "يقرأها أول شخص فقط"),
     ("first_three", 3, "🔐 همسة مشروطة لأول 3 أشخاص",  "يقرأها أول 3 أشخاص فقط"),
+    ("first_five",  5, "🔐 همسة مشروطة لأول 5 أشخاص",  "يقرأها أول 5 أشخاص فقط"),
     ("everyone",    0, "🔓 همسة مشروطة للجميع",         "يمكن لأي شخص قراءتها"),
     ("custom",      0, "🎯 همسة مشروطة مخصصة",           "مخصصة لشخص معين"),
 ]
@@ -708,8 +722,7 @@ def _handle_wrapped_chosen(bot, result, hours):
     cover_code = package.get("cover_code", "")
     character_code = package.get("character_code", "")
 
-    max_readers_map = {"first_one": 1, "everyone": 0, "first_three": 3, "custom": 0}
-    max_r = max_readers_map.get(wtype, 0)
+    max_r = _TYPE_MAX_READERS.get(wtype, 0)
 
     try:
         wid = create_whisper(
@@ -795,6 +808,7 @@ def _handle_wrapped_chosen(bot, result, hours):
 _CW_TYPE_TITLES = {
     "first_one":   "🔐 همسة مشروطة لأول شخص",
     "first_three": "👥 همسة مشروطة لأول 3 أشخاص",
+    "first_five":  "👥 همسة مشروطة لأول 5 أشخاص",
     "everyone":    "🌍 همسة مشروطة للجميع",
     "custom":      "🎯 همسة مشروطة مخصصة",
 }
@@ -865,8 +879,7 @@ def _handle_conditional_chosen(bot, result, hours):
 
     content = draft.get("content", "") or ""
 
-    max_readers_map = {"first_one": 1, "everyone": 0, "first_three": 3}
-    max_r = max_readers_map.get(wtype, 0)
+    max_r = _TYPE_MAX_READERS.get(wtype, 0)
 
     try:
         wid = create_whisper(
@@ -968,8 +981,7 @@ def _handle_media_chosen(bot, result):
         except Exception:
             logger.exception("[MEDIA_INLINE] parse location data failed")
 
-    max_readers_map = {"first_one": 1, "everyone": 0, "first_three": 3, "custom": 0}
-    max_r = max_readers_map.get(wtype, 0)
+    max_r = _TYPE_MAX_READERS.get(wtype, 0)
 
     wid = create_whisper(
         sender_id=user.id,
