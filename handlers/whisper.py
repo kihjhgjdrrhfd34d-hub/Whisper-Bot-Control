@@ -162,14 +162,8 @@ def _pick_reader_style(whisper_id: str, index: int) -> tuple:
 
 
 def _reader_button_label(whisper_id, index, name, badge) -> str:
-    """Short reader button label with a stable, per-whisper funny title.
-
-    The title is picked deterministically from whisper_id + reader index
-    (never random), so it stays fixed for the whole life of a whisper and
-    only changes for a different whisper.
-    """
-    medal, title, _ = _pick_reader_style(whisper_id, index)
-    return f"{medal} {name} — {title}"
+    """Reader button label showing only the reader's name."""
+    return f"👤 {name}"
 
 
 def _extract_condition_config(w_dict: dict, condition_type: str) -> dict | None:

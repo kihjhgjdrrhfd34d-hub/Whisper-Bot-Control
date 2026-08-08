@@ -35,11 +35,11 @@ def _boot():
 
 
 def _reader_name_buttons(kb):
-    """Reader name buttons start with a rank medal (🥇/🥈/🥉)."""
+    """Reader name buttons start with the 👤 avatar prefix."""
     return [
         btn for row in kb.keyboard
         for btn in row
-        if btn.text.startswith(("🥇 ", "🥈 ", "🥉 "))
+        if btn.text.startswith("👤 ")
     ]
 
 
