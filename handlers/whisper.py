@@ -469,6 +469,7 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
             "taken_three": "اكتمل عدد القراء لهذه الهمسة.",
             "taken": "🔒 هذه الهمسة تم فتحها بالفعل.",
             "not_target": "الهمسه ليست لك بطل فضول 😂",
+            "already_read": "🔒 سبق لك فتح هذه الهمسة.",
             "not_found": "❌ هذه الهمسة غير موجودة.",
             "unknown": "❌ خطأ في التحقق من الهمسة.",
         }
@@ -1141,6 +1142,12 @@ def _register_callback_handlers(bot, user_states):
                 bot.answer_callback_query(
                     call.id,
                     "الهمسه ليست لك بطل فضول 😂",
+                    show_alert=True,
+                )
+            elif reason == "already_read":
+                bot.answer_callback_query(
+                    call.id,
+                    "🔒 سبق لك فتح هذه الهمسة.",
                     show_alert=True,
                 )
             elif reason == "not_found":

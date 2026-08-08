@@ -18,6 +18,7 @@ Callback data patterns (بادئة dsh = dashboard):
     dsh:back:<whisper_id>    — عودة للوحة التحكم
 """
 
+import json
 import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -29,6 +30,7 @@ from database import (
 )
 from database.replies import count_replies, get_replies
 from handlers._formatting import _get_sender_display, _fmt_username
+from services.whisper_service import resolve_recipients
 
 logger = logging.getLogger(__name__)
 
@@ -401,11 +403,20 @@ def register_dashboard_handlers(bot: telebot.TeleBot, user_states: dict) -> None
                 hours = int(get_setting("auto_delete_hours"))
             except Exception:
                 pass
+        raw_targets = []
+        try:
+            raw_targets = json.loads(w.get("target_users", "[]"))
+        except Exception:
+            raw_targets = []
+        target_users = raw_targets
+        if w["whisper_type"] == "custom":
+            target_users, _ = resolve_recipients(raw_targets, sender_id=user.id)
+
         new_wid = create_whisper(
             sender_id=user.id,
             content=w["content"],
             whisper_type=w["whisper_type"],
-            target_users=w.get("target_users", "[]") if isinstance(w.get("target_users"), list) else [],
+            target_users=target_users,
             max_readers=w.get("max_readers", 0),
             auto_delete_hours=hours,
             is_destructive=bool(w.get("is_destructive", 0)),

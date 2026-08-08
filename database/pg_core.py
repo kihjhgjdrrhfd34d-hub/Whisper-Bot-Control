@@ -712,9 +712,39 @@ def can_read_whisper(whisper_id, user_id):
         if w["is_locked"]:
             return False, "locked"
         targets = json.loads(w["target_users"])
-        if user_id in targets or str(user_id) in targets:
-            return True, "allowed"
-        return False, "not_target"
+
+        def _matches_target():
+            # Canonical match: targets were stored as numeric user IDs.
+            if user_id in targets or str(user_id) in targets:
+                return True
+            # Legacy rows: targets may have been stored as @username strings.
+            # Resolve them (case-insensitive) so old custom whispers keep working.
+            username_targets = [
+                t.lstrip("@") for t in targets if isinstance(t, str)
+            ]
+            if not username_targets:
+                return False
+            with get_conn() as conn:
+                placeholders = ",".join("%s" for _ in username_targets)
+                rows = conn.execute(
+                    f"SELECT user_id FROM users "
+                    f"WHERE LOWER(username) IN ({placeholders})",
+                    [u.lower() for u in username_targets],
+                ).fetchall()
+            return any(r["user_id"] == user_id for r in rows)
+
+        if not _matches_target():
+            return False, "not_target"
+        # Each recipient may open the whisper only once.
+        with get_conn() as conn:
+            already_read = conn.execute(
+                "SELECT 1 FROM whisper_readers "
+                "WHERE whisper_id=%s AND user_id=%s",
+                (whisper_id, user_id),
+            ).fetchone()
+        if already_read:
+            return False, "already_read"
+        return True, "allowed"
 
     if wtype == "contact_whisper":
         if w["sender_id"] == user_id:

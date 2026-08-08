@@ -31,6 +31,7 @@ from handlers.media_wizard import (
     FOUR_OPTIONS, DESTRUCTIVE_OPTIONS, CONTACT_OPTION,
     build_media_whisper_inline_results, _auto_hours,
 )
+from services.whisper_service import resolve_recipients
 
 
 # ── InlineQuery subclass that preserves the chat field ─────────────────────
@@ -84,6 +85,49 @@ def _read_button(whisper_id: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(InlineKeyboardButton("اضغط للرؤية 🔒", callback_data=f"read:{whisper_id}"))
     return kb
+
+
+# A run of leading recipient tokens in a custom-whisper query:
+# "@username" or a numeric Telegram ID (5+ digits), separated by spaces.
+_CUSTOM_TARGET_TOKEN = r'(?:@[0-9A-Za-z_]+|[1-9][0-9]{4,})'
+_CUSTOM_TARGET_PREFIX_RE = re.compile(
+    r'^(' + _CUSTOM_TARGET_TOKEN + r'(?:[ \t]+' + _CUSTOM_TARGET_TOKEN + r')*)'
+    r'[ \t]+([\s\S]+)$'
+)
+
+
+def _parse_custom_targets(raw: str):
+    """Split a custom-whisper query into (target_tokens, body).
+
+    Supported forms:
+      @user | text                 @user1 @user2 @user3 | text
+      123456789 | text             123456789 987654321 | text
+      @user text                   @user1 123 @user2 | text
+
+    Returns (None, raw) when the query does not start with recipient tokens,
+    so the caller can skip building a custom whisper entirely.
+    """
+    m = _CUSTOM_TARGET_PREFIX_RE.match(raw)
+    if not m:
+        return None, raw
+    token_str, body = m.group(1), m.group(2).strip()
+    targets = token_str.split()
+    if body.startswith("|"):
+        body = body[1:].strip()
+    return targets, body
+
+
+def _unresolved_target_result(unresolved: list) -> InlineQueryResultArticle:
+    """Build an inline result that tells the sender which recipients are unknown."""
+    bad = ", ".join(f"@{u.lstrip('@')}" for u in unresolved)
+    return InlineQueryResultArticle(
+        id="error:custom_target",
+        title="❌ مستلم غير موجود",
+        description=f"لا يمكن إرسال الهمسة: {bad}",
+        input_message_content=InputTextMessageContent(
+            message_text=f"❌ لا يمكن إرسال الهمسة لأن المستلم غير موجود: {bad}"
+        ),
+    )
 
 
 # ── Wrapped whisper type definitions ─────────────────────────────────────
@@ -414,22 +458,35 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     logger.error(f"answer_inline_query (rate_limit): {e}")
                 return
 
-        # ── Auto-detect `@user text` or `ID text` pattern → custom whisper ──
-        _TARGET_RE = re.compile(r'^(@\w+|[1-9]\d{4,})\s+([\s\S]+)$')
-        m = _TARGET_RE.match(raw)
-        if m:
-            raw_target = m.group(1)
-            whisper_body = m.group(2).strip()
-            t = raw_target.lstrip("@")
-            parsed_target = int(t) if t.isdigit() else t
-            display_target = raw_target
+        # ── Auto-detect leading recipient tokens (@user / ID) → custom whisper ──
+        target_tokens, whisper_body = _parse_custom_targets(raw)
+        if target_tokens:
+            resolved_targets, unresolved = resolve_recipients(
+                target_tokens, sender_id=user.id
+            )
+            if unresolved:
+                # Never store unresolvable recipients silently — tell the sender.
+                try:
+                    bot.answer_inline_query(
+                        query.id,
+                        [_unresolved_target_result(unresolved)],
+                        cache_time=0,
+                        is_personal=True,
+                    )
+                except Exception as e:
+                    logger.error(f"answer_inline_query (custom target error): {e}")
+                return
+            display_targets = " ".join(
+                f"@{t.lstrip('@')}" if not t.lstrip("@").isdigit() else t
+                for t in target_tokens
+            )
 
             try:
                 wid_targeted = create_whisper(
                     sender_id=user.id,
                     content=whisper_body,
                     whisper_type="custom",
-                    target_users=[parsed_target],
+                    target_users=resolved_targets,
                     max_readers=0,
                     auto_delete_hours=hours,
                     group_auto_delete_minutes=group_auto_delete_minutes,
@@ -441,12 +498,12 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     if len(whisper_body) > 40
                     else whisper_body
                 )
-                group_msg_targeted = f"هذه همسة سرية لـ {display_target} 🤫"
+                group_msg_targeted = f"هذه همسة سرية لـ {display_targets} 🤫"
                 targeted_kb = _read_button(wid_targeted)
                 results.append(
                     InlineQueryResultArticle(
                         id=f"custom:{wid_targeted}",
-                        title=f"همسة سرية لـ {display_target} فقط...",
+                        title=f"همسة سرية لـ {display_targets} فقط...",
                         description=snippet,
                         input_message_content=InputTextMessageContent(
                             message_text=group_msg_targeted,
@@ -467,25 +524,25 @@ def register_inline_handlers(bot: telebot.TeleBot):
                 body = content
 
                 if wtype == "custom":
-                    if "|" in content:
-                        left, right = content.split("|", 1)
-                        body = right.strip() or content
-                        raw_targets = left.strip().split()
-                        for t in raw_targets:
-                            t = t.lstrip("@")
-                            targets.append(int(t) if t.isdigit() else t)
-                    else:
-                        parts = content.split(None, 1)
-                        if parts:
-                            t = parts[0].lstrip("@")
-                            if t.isdigit() or (len(t) > 3 and " " not in t):
-                                targets.append(int(t) if t.isdigit() else t)
-                                body = parts[1] if len(parts) > 1 else content
-                    if targets:
-                        first = targets[0]
-                        target_label = (
-                            f"@{first}" if isinstance(first, str) else str(first)
+                    target_tokens, parsed_body = _parse_custom_targets(content)
+                    if target_tokens:
+                        resolved_targets, unresolved = resolve_recipients(
+                            target_tokens, sender_id=user.id
                         )
+                        if unresolved:
+                            # The auto-detect path already reported the missing
+                            # recipients and stopped; skip this option here.
+                            continue
+                        targets = resolved_targets
+                        body = parsed_body
+                        first_raw = target_tokens[0].lstrip("@")
+                        target_label = (
+                            f"@{first_raw}" if not first_raw.isdigit() else first_raw
+                        )
+                    else:
+                        targets = []
+                        body = content
+                        target_label = None
 
                 wid = create_whisper(
                     sender_id=user.id,

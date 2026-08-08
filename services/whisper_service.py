@@ -16,7 +16,7 @@ from telebot.util import escape
 from database import (
     get_whisper, can_read_whisper, record_whisper_read, reader_count,
     get_readers, get_curious_ones, upsert_user, get_setting, is_banned,
-    add_curious, count_user_reads,
+    add_curious, count_user_reads, search_users,
 )
 
 
@@ -53,6 +53,51 @@ def ensure_user(user_id: int, username: str | None,
         upsert_user(user_id, username, first_name, last_name)
     except Exception as exc:
         logger.warning("[SVC] ensure_user failed for user_id=%s: %s", user_id, exc)
+
+
+def resolve_recipients(raw_targets, sender_id: int | None = None):
+    """Normalize raw custom-whisper targets into canonical user IDs.
+
+    Accepts numeric user IDs (int or digit strings) and usernames with or
+    without a leading ``@``. Usernames are resolved against the users table
+    using a case-insensitive exact match. Duplicates (including a username and
+    its numeric ID pointing at the same user) are collapsed into a single entry.
+
+    Never silently drops an unresolvable target: anything that cannot be
+    resolved is returned in ``unresolved`` so the caller can abort the whisper
+    and inform the sender.
+
+    Returns:
+        tuple[list[int], list[str]] — (resolved_user_ids, unresolved_targets)
+    """
+    resolved = []
+    unresolved = []
+    seen = set()
+    for raw in raw_targets or []:
+        if isinstance(raw, int) and not isinstance(raw, bool):
+            value = raw
+        else:
+            token = str(raw).strip().lstrip("@")
+            if not token:
+                unresolved.append(str(raw))
+                continue
+            if token.isdigit():
+                value = int(token)
+            else:
+                value = None
+                for u in search_users(token):
+                    uname = str(u["username"] or "").strip().lstrip("@")
+                    if uname.lower() == token.lower():
+                        value = u["user_id"]
+                        break
+                if value is None:
+                    unresolved.append(str(raw))
+                    continue
+        if value in seen:
+            continue
+        seen.add(value)
+        resolved.append(value)
+    return resolved, unresolved
 
 
 # ── Read recording ───────────────────────────────────────────────────
