@@ -14,6 +14,7 @@ Flow:
 import json
 import logging
 import telebot
+from telebot import ContinueHandling
 from telebot.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
@@ -151,6 +152,10 @@ def register_media_wizard_handlers(bot: telebot.TeleBot, user_states: dict):
             return
         if get_setting("bot_active") != "1":
             return
+
+        # ── Variant wizard: media is not accepted — defer to the wizard ─────
+        if user_states.get(user.id, {}).get("action", "").startswith("vwhisper_"):
+            return ContinueHandling()
 
         from services.media import extract_media_from_message
         media = extract_media_from_message(msg)

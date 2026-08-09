@@ -29,6 +29,10 @@ from handlers.conditional_whisper import (
     handle_conditional_whisper_message,
 )
 from handlers.conditional_whisper_admin import register_conditional_whisper_admin_handlers
+from handlers.variant_whisper import (
+    register_variant_whisper_handlers,
+    handle_variant_whisper_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +206,7 @@ def _main_menu_text_and_kb(b, user):
         InlineKeyboardButton("🎭 همسة مغلفة", callback_data="ww_start"),
     )
     kb.add(InlineKeyboardButton("🔐 همسة مشروطة", callback_data="cwhisper_start"))
+    kb.add(InlineKeyboardButton("🧬 همسة متغيرة", callback_data="vwhisper_start"))
     if user.id in ADMIN_IDS:
         kb.add(InlineKeyboardButton("🛡 لوحة التحكم", callback_data="admin:main_new"))
     return text, kb
@@ -529,6 +534,10 @@ def handle_messages(msg: telebot.types.Message):
     if handle_conditional_whisper_message(bot, msg, user_states):
         return
 
+    # ── Variant whisper state ──────────────────────────────────────────────
+    if handle_variant_whisper_message(bot, msg, user_states):
+        return
+
     # ── Envelope draft state ──────────────────────────────────────────────
     from handlers.envelope import handle_envelope_message
     if handle_envelope_message(bot, msg, user_states):
@@ -732,6 +741,7 @@ def register_all_handlers():
     register_contact_whisper_handlers(bot, user_states)
     register_conditional_whisper_handlers(bot, user_states)
     register_conditional_whisper_admin_handlers(bot)
+    register_variant_whisper_handlers(bot, user_states)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

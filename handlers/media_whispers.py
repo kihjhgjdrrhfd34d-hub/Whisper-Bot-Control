@@ -23,6 +23,7 @@ from database import (
     is_banned,
     upsert_user,
 )
+from services.whisper_service import resolve_variant
 
 logger = logging.getLogger(__name__)
 
@@ -171,15 +172,17 @@ def register_media_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
                 "animation": "🎞 متحركة",
                 "location": "📍 موقع",
             }.get(w_dict["message_type"], w_dict["message_type"])
+            variant_text = resolve_variant(w, user.id)
             prompt = (
                 f"📝 *الهمسة الأصلية:* ({mt_label})\n\n"
-                f"{w['content']}\n\n"
+                f"{variant_text}\n\n"
                 f"✏️ أرسل ردّك الآن:"
             )
         else:
+            variant_text = resolve_variant(w, user.id)
             prompt = (
                 f"📝 *الهمسة الأصلية:*\n\n"
-                f"{w['content']}\n\n"
+                f"{variant_text}\n\n"
                 f"✏️ أرسل ردّك الآن:"
             )
 

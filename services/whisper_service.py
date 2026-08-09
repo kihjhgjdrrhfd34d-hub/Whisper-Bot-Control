@@ -11,7 +11,9 @@ for the Telegram interaction layer.
 
 from __future__ import annotations
 
+import json
 import logging
+import zlib
 from telebot.util import escape
 from database import (
     get_whisper, can_read_whisper, record_whisper_read, reader_count,
@@ -42,6 +44,42 @@ def is_own_whisper(user_id: int, w: dict) -> bool:
 def get_whisper_locked_state(w: dict) -> bool:
     """Check if a whisper is currently locked."""
     return bool(w.get("is_locked"))
+
+
+def resolve_variant(w, user_id: int) -> str:
+    """Return the deterministic variant a reader should see for a whisper.
+
+    Variants are read from ``conditions_data["variants"]``. The selection is
+    deterministic (``zlib.crc32`` over ``"{whisper_id}:{user_id}"``), so the
+    same reader always sees the same variant and the result is stable across
+    processes (unlike ``hash()``). Non-text or empty entries are ignored.
+
+    When no valid variants exist (missing key, empty list, or all entries
+    invalid) the original ``content`` is returned unchanged — the behavior
+    is identical to the pre-variant flow.
+    """
+    try:
+        w_dict = dict(w)
+    except Exception:
+        w_dict = {}
+    fallback = w_dict.get("content") or ""
+    try:
+        raw = w_dict.get("conditions_data")
+        if isinstance(raw, str):
+            raw = json.loads(raw)
+        if not isinstance(raw, dict):
+            return fallback
+        variants = raw.get("variants") or []
+        variants = [v for v in variants if isinstance(v, str) and v.strip()]
+        if not variants:
+            return fallback
+        wid = w_dict.get("whisper_id") or w_dict.get("id") or ""
+        if not wid:
+            return fallback
+        idx = zlib.crc32(f"{wid}:{user_id}".encode("utf-8")) % len(variants)
+        return variants[idx]
+    except Exception:
+        return fallback
 
 
 # ── User registration ────────────────────────────────────────────────

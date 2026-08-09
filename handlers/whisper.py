@@ -32,6 +32,7 @@ from services.whisper_service import (
     build_read_receipt_message,
     build_destructive_receipt_message,
     build_public_whisper_notification,
+    resolve_variant,
 )
 
 logger = logging.getLogger(__name__)
@@ -512,10 +513,11 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
             else:
                 bot.send_message(user.id, msg)
             return True
+        variant_text = resolve_variant(w, user.id)
         if call:
-            bot.answer_callback_query(call.id, f"💣 {w['content']}", show_alert=True)
+            bot.answer_callback_query(call.id, f"💣 {variant_text}", show_alert=True)
         else:
-            bot.send_message(user.id, f"💣 {w['content']}")
+            bot.send_message(user.id, f"💣 {variant_text}")
         logger.info("[DESTROY] content shown whisper_id=%s", whisper_id)
         # everyone type: NEVER modify group keyboard, NEVER lock/delete, keep in DB
         if get_setting("read_receipt_enabled") == "1":
@@ -535,7 +537,7 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
                 "audio": "🎵 ملف صوتي", "document": "📄 مستند", "location": "📍 موقع",
                 "animation": "🎞 متحركة",
             }.get(w_dict["message_type"], w_dict["message_type"])
-            caption = w_dict.get("content") or w_dict.get("caption") or ""
+            caption = resolve_variant(w, user.id) or w_dict.get("caption") or ""
             alert_text = f"{_WHISPER_ALERT_INTRO}🤫 {mt_label}"
             if caption:
                 alert_text += f"\n{caption}"
@@ -544,7 +546,8 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
             else:
                 bot.send_message(user.id, alert_text)
         else:
-            content = f"{_WHISPER_ALERT_INTRO}🤫 {w['content']}" if w.get("content") else f"{_WHISPER_ALERT_INTRO}🤫 (محتوى فارغ)"
+            variant_text = resolve_variant(w, user.id)
+            content = f"{_WHISPER_ALERT_INTRO}🤫 {variant_text}" if variant_text else f"{_WHISPER_ALERT_INTRO}🤫 (محتوى فارغ)"
             if call:
                 bot.answer_callback_query(call.id, content, show_alert=True)
             else:
@@ -622,7 +625,7 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
                     sname = f"@{sender['username']}" if sender.get("username") else "شخص"
             else:
                 sname = "شخص"
-            content_text = rw.get("content") or ""
+            content_text = resolve_variant(rw, user.id) or ""
             if not content_text and rw.get("message_type"):
                 mt_label = {
                     "photo": "🖼 صورة", "video": "🎬 فيديو", "voice": "🎤 تسجيل صوتي",
@@ -1177,7 +1180,8 @@ def _register_callback_handlers(bot, user_states):
                     call.id, "🔒 لقد قرأت هذه الهمسة التدميرية من قبل!", show_alert=True
                 )
                 return True
-            bot.answer_callback_query(call.id, f"💣 {w['content']}", show_alert=True)
+            variant_text = resolve_variant(w, user.id)
+            bot.answer_callback_query(call.id, f"💣 {variant_text}", show_alert=True)
             logger.info("[DESTROY] content shown whisper_id=%s", whisper_id)
             # everyone type: NEVER modify group keyboard, NEVER lock/delete, keep in DB
             if get_setting("read_receipt_enabled") == "1":
@@ -1202,13 +1206,14 @@ def _register_callback_handlers(bot, user_states):
                     "location": "📍 موقع",
                     "animation": "🎞 متحركة",
                 }.get(w_dict["message_type"], w_dict["message_type"])
-                caption = w_dict.get("content") or w_dict.get("caption") or ""
+                caption = resolve_variant(w, user.id) or w_dict.get("caption") or ""
                 alert_text = f"🤫 {mt_label}"
                 if caption:
                     alert_text += f"\n{caption}"
                 bot.answer_callback_query(call.id, alert_text, show_alert=True)
             else:
-                bot.answer_callback_query(call.id, f"🤫 {w['content']}", show_alert=True)
+                variant_text = resolve_variant(w, user.id)
+                bot.answer_callback_query(call.id, f"🤫 {variant_text}", show_alert=True)
 
 
 
@@ -1270,7 +1275,7 @@ def _register_callback_handlers(bot, user_states):
                 else:
                     sender_name = "شخص"
 
-                content_text = w.get("content") or ""
+                content_text = resolve_variant(w, user.id) or ""
                 if not content_text and w.get("message_type"):
                     mt_label = {
                         "photo": "🖼 صورة",
@@ -1654,6 +1659,25 @@ def _register_callback_handlers(bot, user_states):
                 call.id, "⛔ هذا الإجراء للمرسل فقط.", show_alert=True
             )
             return
+        # ── Variant whisper: editing the text alone would orphan the variants
+        #    (readers would still see the OLD conditions_data["variants"]).
+        #    Editing is disabled in v1 — no dedicated wizard yet. ──
+        w_dict = dict(w)
+        raw_conds = w_dict.get("conditions_data")
+        if raw_conds:
+            import json
+            try:
+                conds = json.loads(raw_conds) if isinstance(raw_conds, str) else raw_conds
+                variants = conds.get("variants") if isinstance(conds, dict) else None
+                if isinstance(variants, list) and len(variants) >= 2:
+                    bot.answer_callback_query(
+                        call.id,
+                        "❌ تعديل الهمسة المتغيرة غير متاح حالياً.",
+                        show_alert=True,
+                    )
+                    return
+            except (json.JSONDecodeError, TypeError):
+                pass
         user_states[user.id] = {"action": "edit_whisper", "whisper_id": whisper_id}
         bot.answer_callback_query(call.id)
         try:

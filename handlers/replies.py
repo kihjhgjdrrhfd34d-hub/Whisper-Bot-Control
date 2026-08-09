@@ -56,6 +56,7 @@ from database.replies import (
     count_replies,
     MAX_REPLIES_PER_WHISPER,
 )
+from services.whisper_service import resolve_variant
 
 logger = logging.getLogger(__name__)
 
@@ -252,9 +253,11 @@ def _handle_reply_callback(
                 "document": "📄 مستند",
                 "location": "📍 موقع",
             }.get(w_dict["message_type"], w_dict["message_type"])
-            reply_text = f"📝 *الهمسة الأصلية:* ({mt_label})\n\n{w['content']}\n\n✏️ أرسل ردّك الآن:"
+            variant_text = resolve_variant(w, user.id)
+            reply_text = f"📝 *الهمسة الأصلية:* ({mt_label})\n\n{variant_text}\n\n✏️ أرسل ردّك الآن:"
         else:
-            reply_text = f"📝 *الهمسة الأصلية:*\n\n{w['content']}\n\n✏️ أرسل ردّك الآن:"
+            variant_text = resolve_variant(w, user.id)
+            reply_text = f"📝 *الهمسة الأصلية:*\n\n{variant_text}\n\n✏️ أرسل ردّك الآن:"
         bot.send_message(
             user.id,
             reply_text,
@@ -389,6 +392,7 @@ def _restore_whisper_message(
     message_id: int,
     whisper_row,
     whisper_id: str,
+    user_id: int,
 ) -> None:
     """تعديل رسالة الهمسة الخاصة لعرض محتواها الأصلي مع أزرار الإجراءات."""
     kb = whisper_actions_keyboard(whisper_id)
@@ -402,7 +406,7 @@ def _restore_whisper_message(
             "document": "📄 مستند",
             "location": "📍 موقع",
         }.get(w_dict["message_type"], w_dict["message_type"])
-        content = w_dict.get("content") or ""
+        content = resolve_variant(whisper_row, user_id) or ""
         display = f"🤫 *الهمسة:* ({mt_label})"
         if content:
             display += f"\n\n{content}"
@@ -419,7 +423,7 @@ def _restore_whisper_message(
     else:
         try:
             bot.edit_message_text(
-                f"🤫 *الهمسة:*\n\n{whisper_row['content']}",
+                f"🤫 *الهمسة:*\n\n{resolve_variant(whisper_row, user_id)}",
                 chat_id=chat_id,
                 message_id=message_id,
                 parse_mode=None,
@@ -636,13 +640,13 @@ def _handle_conversation_callback(
             "document": "📄 [مستند]",
             "location": "📍 [موقع]",
         }.get(w_dict["message_type"], f"[{w_dict['message_type']}]")
-        content = w_dict.get("content") or ""
+        content = resolve_variant(w, user.id) or ""
         if content:
             lines.append(f"{mt_label} {content}")
         else:
             lines.append(mt_label)
     else:
-        lines.append(w['content'])
+        lines.append(resolve_variant(w, user.id))
     lines.append("")
     lines.append("───────────────")
 
@@ -922,7 +926,7 @@ def register_reply_handlers(bot: telebot.TeleBot, user_states: dict) -> None:
             try:
                 _restore_whisper_message(
                     bot, call.message.chat.id, call.message.message_id,
-                    w, whisper_id,
+                    w, whisper_id, call.from_user.id,
                 )
             except Exception as exc:
                 logger.error(f"close_conv restore failed: {exc}")

@@ -117,6 +117,22 @@ def _parse_custom_targets(raw: str):
     return targets, body
 
 
+# A leading run of recipient tokens WITHOUT a body (used for variant `custom`
+# results where the whisper text comes from the stored draft, so the query
+# typically only carries the target).
+_LEADING_TARGET_RUN = re.compile(
+    r'^(' + _CUSTOM_TARGET_TOKEN + r'(?:[ \t]+' + _CUSTOM_TARGET_TOKEN + r')*)'
+)
+
+
+def _leading_recipient_tokens(raw: str):
+    """Extract the leading run of @user / ID tokens from ``raw`` (may be empty)."""
+    m = _LEADING_TARGET_RUN.match(raw.strip())
+    if not m:
+        return None
+    return m.group(1).split()
+
+
 def _unresolved_target_result(unresolved: list) -> InlineQueryResultArticle:
     """Build an inline result that tells the sender which recipients are unknown."""
     bad = ", ".join(f"@{u.lstrip('@')}" for u in unresolved)
@@ -156,6 +172,16 @@ CONDITIONAL_TYPE_OPTIONS = [
     ("first_five",  5, "🔐 همسة مشروطة لأول 5 أشخاص",  "يقرأها أول 5 أشخاص فقط"),
     ("everyone",    0, "🔓 همسة مشروطة للجميع",         "يمكن لأي شخص قراءتها"),
     ("custom",      0, "🎯 همسة مشروطة مخصصة",           "مخصصة لشخص معين"),
+]
+
+# Variant whisper type options — same max_readers mechanism as the other
+# inline flows; the chosen type drives create_whisper() in _handle_variant_chosen().
+VARIANT_TYPE_OPTIONS = [
+    ("everyone",    0, "🧬 للجميع",          "يقرأها أي شخص"),
+    ("first_one",   1, "🧬 لأول شخص",        "يقرأها أول شخص فقط"),
+    ("first_three", 3, "🧬 لأول 3 أشخاص",    "يقرأها أول 3 أشخاص فقط"),
+    ("first_five",  5, "🧬 لأول 5 أشخاص",    "يقرأها أول 5 أشخاص فقط"),
+    ("custom",      0, "🧬 مخصصة",           "مخصصة لشخص معين"),
 ]
 
 
@@ -259,6 +285,73 @@ def build_conditional_inline_results(draft, hours):
             )
         except Exception as e:
             logger.error(f"conditional inline build [{wtype}]: {e}")
+
+    return results
+
+
+def _valid_variant_draft(draft):
+    """Validate a variant whisper draft; return the sanitized variants list.
+
+    A valid variant draft must have ``category=="variant"`` and a JSON
+    ``conditions_data`` holding a ``variants`` list with at least two
+    non-empty text entries. Any invalid draft returns ``None`` so callers
+    can reject it safely (nothing about the variants is ever shown to the
+    reader or embedded in the placeholder text).
+    """
+    try:
+        if dict(draft).get("category") != "variant":
+            return None
+        raw = dict(draft).get("conditions_data") or ""
+        if isinstance(raw, str):
+            conds = json.loads(raw)
+        else:
+            conds = raw
+        if not isinstance(conds, dict):
+            return None
+        variants = conds.get("variants")
+        if not isinstance(variants, list):
+            return None
+        variants = [v for v in variants if isinstance(v, str) and v.strip()]
+        if len(variants) < 2:
+            return None
+        return variants
+    except Exception:
+        return None
+
+
+def build_variant_inline_results(draft, hours):
+    """
+    Build inline results for a variant whisper draft.
+    Creates placeholder results WITHOUT calling create_whisper() and WITHOUT
+    exposing any variant text. The actual whisper is created in
+    _handle_variant_chosen() when the user selects a type.
+    """
+    results = []
+    draft_id = draft["id"]
+
+    placeholder_text = (
+        "🧬 همسة متغيرة\n\n"
+        "⏳ جاري تجهيز الهمسة..."
+    )
+
+    placeholder_kb = InlineKeyboardMarkup(row_width=1)
+    placeholder_kb.add(InlineKeyboardButton("⏳ جاري التجهيز...", callback_data="v_processing"))
+
+    for wtype, max_r, title, desc in VARIANT_TYPE_OPTIONS:
+        try:
+            results.append(
+                InlineQueryResultArticle(
+                    id=f"v:{wtype}:{draft_id}",
+                    title=title,
+                    description=desc,
+                    input_message_content=InputTextMessageContent(
+                        message_text=placeholder_text,
+                    ),
+                    reply_markup=placeholder_kb,
+                )
+            )
+        except Exception as e:
+            logger.error(f"variant inline build [{wtype}]: {e}")
 
     return results
 
@@ -399,6 +492,56 @@ def register_inline_handlers(bot: telebot.TeleBot):
                     except Exception as e:
                         logger.error(f"answer_inline_query (cw: error): {e}")
                     return
+
+        # ── Variant whisper "v:" prefix ───────────────────────────────────
+        if raw.startswith("v:"):
+            _draft_id_str = raw[2:].strip()
+            _draft = None
+            if _draft_id_str:
+                try:
+                    _draft_id = int(_draft_id_str)
+                except (ValueError, TypeError):
+                    _draft_id = None
+                if _draft_id is not None:
+                    _draft = get_envelope_draft(user.id)
+                    if not _draft or _draft["id"] != _draft_id:
+                        _draft = None
+            if _draft is not None and _valid_variant_draft(_draft):
+                _chat_id = 0
+                if hasattr(query, "_chat") and query._chat and query._chat.id:
+                    _chat_id = query._chat.id
+                try:
+                    update_draft_target(user.id, _chat_id)
+                except Exception as e:
+                    logger.warning(f"[V] update_draft_target failed: {e}")
+                hours = _auto_hours()
+                results = build_variant_inline_results(_draft, hours)
+                if results:
+                    try:
+                        bot.answer_inline_query(
+                            query.id, results, cache_time=0, is_personal=True,
+                        )
+                    except Exception as e:
+                        logger.error(f"answer_inline_query (v:): {e}")
+                    return
+            else:
+                try:
+                    bot.answer_inline_query(
+                        query.id,
+                        [InlineQueryResultArticle(
+                            id="v:error:expired",
+                            title="❌ الهمسة المتغيرة غير متاحة",
+                            description="انتهت صلاحيتها أو تم استخدامها بالفعل.",
+                            input_message_content=InputTextMessageContent(
+                                message_text="❌ انتهت صلاحية الهمسة المتغيرة أو تم استخدامها بالفعل.",
+                            ),
+                        )],
+                        cache_time=0,
+                        is_personal=True,
+                    )
+                except Exception as e:
+                    logger.error(f"answer_inline_query (v: error): {e}")
+                return
 
         # ── Empty query: show placeholder ─────────────────────────────────
         if not raw:
@@ -669,6 +812,11 @@ def register_inline_handlers(bot: telebot.TeleBot):
         # ── Conditional whisper: create whisper now ──────────────────────
         if result_id.startswith("cw:"):
             _handle_conditional_chosen(bot, result, _auto_hours())
+            return
+
+        # ── Variant whisper: create whisper from draft ───────────────────
+        if result_id.startswith("v:"):
+            _handle_variant_chosen(bot, result, _auto_hours())
             return
 
         # ── Media whisper: create whisper from pending ────────────────────
@@ -996,6 +1144,139 @@ def _handle_conditional_chosen(bot, result, hours):
 
     delete_envelope_draft(user.id)
     logger.info("[CW] whisper created wid=%s wtype=%s draft=%s", wid, wtype, draft_id_str)
+
+
+_VARIANT_TYPE_TITLES = {
+    "first_one":   "🧬 همسة متغيرة لأول شخص",
+    "first_three": "🧬 همسة متغيرة لأول 3 أشخاص",
+    "first_five":  "🧬 همسة متغيرة لأول 5 أشخاص",
+    "everyone":    "🧬 همسة متغيرة للجميع",
+    "custom":      "🧬 همسة متغيرة مخصصة",
+}
+
+
+def _build_variant_ui_text(wtype):
+    """Display text for a variant whisper (type only — never the variants)."""
+    return _VARIANT_TYPE_TITLES.get(wtype, "🧬 همسة متغيرة")
+
+
+def _handle_variant_chosen(bot, result, hours):
+    """
+    Handle chosen inline result for a variant whisper draft.
+    Creates the actual whisper (content = first variant as fallback,
+    conditions_data kept in full), edits the placeholder, and consumes the
+    draft so it cannot be reused for a second whisper.
+    """
+    user = result.from_user
+    result_id = result.result_id
+
+    # Parse: "v:{wtype}:{draft_id}"
+    parts = result_id.split(":")
+    if len(parts) != 3:
+        logger.warning("[V] invalid result_id format: %s", result_id)
+        return
+    _, wtype, draft_id_str = parts
+
+    if wtype not in _TYPE_MAX_READERS:
+        logger.warning("[V] unknown wtype: %s", wtype)
+        return
+
+    draft = get_pending_draft(user.id)
+    if not draft:
+        logger.warning("[V] pending draft not found for user=%s", user.id)
+        return
+
+    try:
+        if draft["id"] != int(draft_id_str):
+            logger.warning("[V] draft mismatch user=%s draft=%s", user.id, draft_id_str)
+            return
+    except (ValueError, TypeError):
+        logger.warning("[V] invalid draft id: %s", draft_id_str)
+        return
+
+    if draft.get("category") != "variant":
+        logger.warning("[V] draft category mismatch user=%s", user.id)
+        return
+
+    variants = _valid_variant_draft(draft)
+    if not variants:
+        logger.warning("[V] invalid variant list user=%s", user.id)
+        return
+
+    max_r = _TYPE_MAX_READERS.get(wtype, 0)
+    targets = []
+    if wtype == "custom":
+        query_text = getattr(result, "query", "") or ""
+        rest = query_text
+        idx = query_text.find(":")
+        if idx != -1:
+            rest = query_text[idx + 1:]
+        parts_q = rest.split(" ", 1)
+        target_text = parts_q[1] if len(parts_q) > 1 else ""
+        target_tokens = _leading_recipient_tokens(target_text)
+        if target_tokens:
+            resolved_targets, unresolved = resolve_recipients(
+                target_tokens, sender_id=user.id
+            )
+            if unresolved:
+                logger.warning("[V] unresolved custom targets: %s", unresolved)
+                delete_envelope_draft(user.id)
+                return
+            targets = resolved_targets
+
+    try:
+        wid = create_whisper(
+            sender_id=user.id,
+            content=variants[0],
+            whisper_type=wtype,
+            target_users=targets,
+            max_readers=max_r,
+            auto_delete_hours=hours,
+            conditions_data=draft.get("conditions_data") or None,
+        )
+    except Exception as exc:
+        logger.error("[V] create_whisper failed: %s", exc)
+        return
+
+    final_text = _build_variant_ui_text(wtype)
+
+    bot_username = ""
+    try:
+        bot_username = bot.get_me().username
+    except Exception:
+        logger.exception("[V] get_me failed")
+
+    kb = InlineKeyboardMarkup(row_width=1)
+    if bot_username:
+        kb.add(InlineKeyboardButton(
+            "🔓 اضغط للرؤية",
+            url=f"tg://resolve?domain={bot_username}&start=view_{wid}",
+        ))
+    else:
+        kb.add(InlineKeyboardButton("🔓 اضغط للرؤية", callback_data=f"read:{wid}"))
+
+    imid = result.inline_message_id
+    if imid:
+        try:
+            bot.edit_message_text(
+                final_text,
+                inline_message_id=imid,
+                reply_markup=kb,
+            )
+            logger.info("[V] edit inline message SUCCEEDED wid=%s", wid)
+        except Exception as exc:
+            logger.warning("[V] edit inline message FAILED wid=%s: %s", wid, exc)
+    else:
+        logger.warning("[V] inline_message_id is None — cannot edit placeholder. wid=%s", wid)
+
+    if imid:
+        try:
+            update_whisper_group_message(wid, inline_message_id=imid)
+        except Exception as exc:
+            logger.warning("[V] store inline_message_id failed: %s", exc)
+
+    delete_envelope_draft(user.id)
+    logger.info("[V] whisper created wid=%s wtype=%s draft=%s", wid, wtype, draft_id_str)
 
 
 def _handle_media_chosen(bot, result):

@@ -23,12 +23,14 @@ import logging
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from handlers.keyboard_utils import back_button, confirm_button, cancel_button
+from config import ADMIN_IDS
 from database import (
     get_whisper, get_readers, reader_count, delete_whisper,
     close_whisper, toggle_pin_whisper, create_whisper,
     get_setting,
 )
 from database.replies import count_replies, get_replies
+from database.envelope import create_draft, get_draft, update_draft_target
 from handlers._formatting import _get_sender_display, _fmt_username
 from services.whisper_service import resolve_recipients
 
@@ -48,6 +50,76 @@ def _get_type_label(whisper_type: str) -> str:
         "custom": "مخصصة 🎯",
     }
     return labels.get(whisper_type, whisper_type)
+
+
+def _is_variant_whisper(w) -> bool:
+    """True when the whisper holds a valid variant list in conditions_data."""
+    try:
+        raw = dict(w).get("conditions_data") or ""
+        if isinstance(raw, str):
+            conds = json.loads(raw)
+        else:
+            conds = raw
+        if not isinstance(conds, dict):
+            return False
+        variants = conds.get("variants") or []
+        variants = [v for v in variants if isinstance(v, str) and v.strip()]
+        return len(variants) >= 2
+    except Exception:
+        return False
+
+
+def _variant_count(w) -> int:
+    """Number of valid (non-blank) variants, or 0."""
+    try:
+        raw = dict(w).get("conditions_data") or ""
+        if isinstance(raw, str):
+            conds = json.loads(raw)
+        else:
+            conds = raw
+        if not isinstance(conds, dict):
+            return 0
+        variants = conds.get("variants") or []
+        return len([v for v in variants if isinstance(v, str) and v.strip()])
+    except Exception:
+        return 0
+
+
+_MAX_PREVIEW_TEXT = 3900
+_MAX_VARIANT_LEN = 300
+
+
+def _build_variants_preview_text(w) -> str:
+    """Numbered list of all variants with safe truncation for Telegram limits.
+
+    Never embeds variants into callback_data — this is a display-only text.
+    """
+    try:
+        raw = dict(w).get("conditions_data") or ""
+        if isinstance(raw, str):
+            conds = json.loads(raw)
+        else:
+            conds = raw
+        if not isinstance(conds, dict):
+            return "🧬 لا يمكن عرض النسخ."
+        variants = [v for v in (conds.get("variants") or []) if isinstance(v, str) and v.strip()]
+    except Exception:
+        return "🧬 لا يمكن عرض النسخ."
+
+    if not variants:
+        return "🧬 لا توجد نسخ صالحة للعرض."
+
+    lines = []
+    for i, v in enumerate(variants, 1):
+        v = v.strip()
+        if len(v) > _MAX_VARIANT_LEN:
+            v = v[:_MAX_VARIANT_LEN] + "…"
+        lines.append(f"{i}. {v}")
+
+    text = "\n".join(lines)
+    if len(text) > _MAX_PREVIEW_TEXT:
+        text = text[:_MAX_PREVIEW_TEXT] + "\n… (بقية النسخ مقطوعة للعرض الآمن)"
+    return text
 
 
 def _format_time(iso_str) -> str:
@@ -78,6 +150,15 @@ def dashboard_keyboard(whisper_id: str) -> InlineKeyboardMarkup:
         InlineKeyboardButton("💬 عرض الردود", callback_data=f"{_DASH_PREFIX}rpls:{whisper_id}"),
         InlineKeyboardButton("📤 إعادة إرسال", callback_data=f"{_DASH_PREFIX}rsnd:{whisper_id}"),
     )
+    try:
+        w = get_whisper(whisper_id)
+        is_variant = bool(w) and _is_variant_whisper(w)
+    except Exception:
+        is_variant = False
+    if is_variant:
+        kb.add(
+            InlineKeyboardButton("🧬 عرض النسخ", callback_data=f"{_DASH_PREFIX}vars:{whisper_id}"),
+        )
     kb.add(
         InlineKeyboardButton("📌 تثبيت", callback_data=f"{_DASH_PREFIX}pin:{whisper_id}"),
         InlineKeyboardButton("🗑 حذف", callback_data=f"{_DASH_PREFIX}del:{whisper_id}"),
@@ -142,6 +223,13 @@ def _build_dashboard_text(w) -> str:
         f"👥 نوع الهمسة:",
         f"{type_label}",
     ]
+
+    if _is_variant_whisper(w):
+        vcount = _variant_count(w)
+        lines.extend([
+            "",
+            f"🧬 همسة متغيرة — عدد النسخ: {vcount}",
+        ])
 
     if media_label:
         lines.extend([
@@ -384,6 +472,43 @@ def register_dashboard_handlers(bot: telebot.TeleBot, user_states: dict) -> None
             except Exception:
                 pass
 
+    # ── عرض النسخ (الهمسة المتغيرة فقط) ──────────────────────────────────
+    @bot.callback_query_handler(func=lambda c: c.data.startswith(f"{_DASH_PREFIX}vars:"))
+    def dash_variants(call: telebot.types.CallbackQuery):
+        user = call.from_user
+        whisper_id = call.data.split(":", 2)[2]
+        w = get_whisper(whisper_id)
+        if not w:
+            bot.answer_callback_query(call.id, "❌ الهمسة غير موجودة.", show_alert=True)
+            return
+        if user.id != w["sender_id"] and user.id not in ADMIN_IDS:
+            bot.answer_callback_query(call.id, "⛔ هذا الإجراء للمرسل أو الإدمن فقط.", show_alert=True)
+            return
+        if not _is_variant_whisper(w):
+            bot.answer_callback_query(call.id, "❌ هذه ليست همسة متغيرة.", show_alert=True)
+            return
+        bot.answer_callback_query(call.id)
+        count = _variant_count(w)
+        text = (
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🧬 نسخ الهمسة المتغيرة ({count})\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"{_build_variants_preview_text(w)}\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        try:
+            bot.edit_message_text(
+                text, call.message.chat.id, call.message.message_id,
+                reply_markup=_back_button(whisper_id),
+            )
+        except Exception:
+            try:
+                bot.send_message(
+                    call.message.chat.id, text, reply_markup=_back_button(whisper_id),
+                )
+            except Exception:
+                pass
+
     # ── إعادة إرسال ───────────────────────────────────────────────────────
     @bot.callback_query_handler(func=lambda c: c.data.startswith(f"{_DASH_PREFIX}rsnd:"))
     def dash_resend(call: telebot.types.CallbackQuery):
@@ -397,6 +522,53 @@ def register_dashboard_handlers(bot: telebot.TeleBot, user_states: dict) -> None
             bot.answer_callback_query(call.id, "⛔ هذا الإجراء للمرسل فقط.", show_alert=True)
             return
         w = dict(w)
+
+        # ── Variant whisper: rebuild a draft and reuse the existing v: flow ──
+        if _is_variant_whisper(w):
+            try:
+                raw = w.get("conditions_data") or ""
+                conds = json.loads(raw) if isinstance(raw, str) else raw
+                variants = [v for v in (conds.get("variants") or []) if isinstance(v, str) and v.strip()]
+            except Exception:
+                variants = []
+            if len(variants) < 2:
+                bot.answer_callback_query(call.id, "❌ لا يمكن إعادة إرسال النسخ.", show_alert=True)
+                return
+            try:
+                create_draft(
+                    user.id,
+                    content=variants[0],
+                    category="variant",
+                    conditions_data=json.dumps({"variants": variants}, ensure_ascii=False),
+                )
+                update_draft_target(user.id, 0)
+            except Exception as exc:
+                logger.error("[DASH] variant resend draft failed: %s", exc)
+                bot.answer_callback_query(call.id, "❌ فشل تجهيز إعادة الإرسال.", show_alert=True)
+                return
+            draft = get_draft(user.id)
+            if not draft:
+                bot.answer_callback_query(call.id, "❌ فشل تجهيز إعادة الإرسال.", show_alert=True)
+                return
+            resend_kb = InlineKeyboardMarkup()
+            resend_kb.add(InlineKeyboardButton(
+                "📤 اضغط لإعادة الإرسال",
+                switch_inline_query=f"v:{draft['id']}",
+            ))
+            bot.answer_callback_query(call.id, "✅ تم تجهيز النسخ!", show_alert=False)
+            try:
+                bot.send_message(
+                    call.message.chat.id,
+                    f"📤 *تم تجهيز الهمسة المتغيرة!*\n\n"
+                    f"اضغط الزر أدناه، اختر المجموعة التي تريد،"
+                    f" ثم اختر نوع الهمسة.",
+                    parse_mode="Markdown",
+                    reply_markup=resend_kb,
+                )
+            except Exception:
+                pass
+            return
+
         hours = 0
         if get_setting("auto_delete_enabled") == "1":
             try:
