@@ -19,6 +19,7 @@ from database import (
     get_whisper, can_read_whisper, record_whisper_read, reader_count,
     get_readers, get_curious_ones, upsert_user, get_setting, is_banned,
     add_curious, count_user_reads, search_users,
+    effective_max_readers, get_reader_ordinal,
 )
 
 
@@ -47,16 +48,27 @@ def get_whisper_locked_state(w: dict) -> bool:
 
 
 def resolve_variant(w, user_id: int) -> str:
-    """Return the deterministic variant a reader should see for a whisper.
+    """Return the variant a reader should see for a whisper.
 
-    Variants are read from ``conditions_data["variants"]``. The selection is
-    deterministic (``zlib.crc32`` over ``"{whisper_id}:{user_id}"``), so the
-    same reader always sees the same variant and the result is stable across
-    processes (unlike ``hash()``). Non-text or empty entries are ignored.
+    For limited types (first_one / first_three / first_five) the variant is
+    assigned by *actual read order*, not by user_id: the first accepted reader
+    gets ``variants[0]``, the second ``variants[1]``, and so on. The ordinal
+    comes from ``get_reader_ordinal`` (whisper_readers.id = acceptance order),
+    so two different users never collide on the same variant because of their
+    user_id.
+
+    For everyone / custom (no reader limit) the historical deterministic
+    ``zlib.crc32("{whisper_id}:{user_id}")`` selection is kept unchanged so a
+    returning reader always sees the same variant.
 
     When no valid variants exist (missing key, empty list, or all entries
-    invalid) the original ``content`` is returned unchanged — the behavior
-    is identical to the pre-variant flow.
+    invalid) the original ``content`` is returned unchanged — identical to the
+    pre-variant flow. The same fallback is used when the reader's ordinal has
+    no matching variant (fewer variants than readers) — never a random pick.
+
+    When the user has no reader record (e.g. the sender or an admin previewing
+    their own whisper) the previous crc32-based selection is preserved so old
+    behavior is unaffected.
     """
     try:
         w_dict = dict(w)
@@ -76,6 +88,19 @@ def resolve_variant(w, user_id: int) -> str:
         wid = w_dict.get("whisper_id") or w_dict.get("id") or ""
         if not wid:
             return fallback
+        limit = effective_max_readers(w_dict)
+        if limit > 0:
+            # Limited types (first_one / first_three / first_five / future):
+            # the reader's ordinal (actual acceptance order) picks the variant.
+            ordinal = get_reader_ordinal(wid, user_id)
+            if ordinal is not None:
+                if ordinal < len(variants):
+                    return variants[ordinal]
+                # Fewer variants than readers — return the stored content
+                # instead of picking another (possibly repeated) variant.
+                return fallback
+        # everyone / custom (no reader limit) or no reader record yet
+        # (sender/admin preview): historical deterministic selection.
         idx = zlib.crc32(f"{wid}:{user_id}".encode("utf-8")) % len(variants)
         return variants[idx]
     except Exception:

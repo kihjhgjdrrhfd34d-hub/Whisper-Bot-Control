@@ -793,6 +793,34 @@ def reader_count(whisper_id):
         ).fetchone()[0]
 
 
+def get_reader_ordinal(whisper_id: str, user_id: int) -> int | None:
+    """Return the reader's 0-based read-ordinal for a whisper.
+
+    The ordinal reflects the *actual admission order* into whisper_readers:
+    the first accepted reader returns 0, the second returns 1, and so on.
+
+    Ordering uses the ``id`` primary key (insertion/commit order), NOT
+    ``read_at`` — read_at has second granularity, so two concurrent reads
+    within the same second would otherwise tie. Because record_whisper_read
+    serializes writes (BEGIN IMMEDIATE + conditional insert), ``id`` order
+    equals acceptance order even under a race.
+
+    Returns None when the user has no reader record for this whisper
+    (e.g. the sender or an admin previewing their own whisper).
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM whisper_readers WHERE whisper_id=? AND user_id=?",
+            (whisper_id, user_id),
+        ).fetchone()
+        if row is None:
+            return None
+        return conn.execute(
+            "SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=? AND id < ?",
+            (whisper_id, row["id"]),
+        ).fetchone()[0]
+
+
 def count_user_reads(user_id):
     """Total whispers a user has read across all whispers."""
     with get_conn() as conn:

@@ -14,8 +14,8 @@ notifications):
   2. variant + first_three — each of 3 readers gets their own deterministic
                            variant, and each sender notification matches it.
   3. variant + first_five  — same for 5 readers.
-  4. variant + first_one   — the notification shows the reader's actual variant,
-                           NOT statically ``variants[0]``.
+  4. variant + first_one   — the single reader sees ``variants[0]`` (assigned
+                            by read order) and the notification matches it.
   5. non-variant whispers  — old notification text (``content``) unchanged.
   6. malformed/missing variants — resolve_variant falls back to ``content``
                            with no crash.
@@ -189,14 +189,15 @@ class TestBuilderFirstOneVariant(unittest.TestCase):
         self.wid = _make_variant(self.variants[0], self.variants, "first_one", max_readers=1)
         self.w = _w(self.wid)
 
-    def test_first_one_notification_shows_reader_variant_not_first(self):
-        uid = _find_reader_away_from_first(self.w, self.variants)
-        self.assertIsNotNone(uid)
-        expected = resolve_variant(self.w, uid)
-        self.assertNotEqual(expected, self.variants[0])
-        notify = build_first_one_notification(_Reader(uid), self.w)
+    def test_first_one_notification_matches_reader_variant(self):
+        db.record_whisper_read(self.wid, READER_A)
+        self.w = _w(self.wid)
+        expected = resolve_variant(self.w, READER_A)
+        self.assertEqual(expected, self.variants[0])
+        notify = build_first_one_notification(_Reader(READER_A), self.w)
         self.assertIn(expected, notify)
-        self.assertNotIn(self.variants[0], notify)
+        for other in self.variants[1:]:
+            self.assertNotIn(other, notify)
 
 
 # ── Builder-level: non-variant unchanged ──────────────────────────────────
@@ -350,16 +351,14 @@ class TestCompleteReadFlowFirstFive(_FlowCase):
 
 class TestCompleteReadFlowFirstOne(_FlowCase):
 
-    def test_notification_shows_reader_variant_not_first(self):
+    def test_first_reader_sees_first_variant(self):
         variants = ["أول شخص: ألف", "أول شخص: باء", "أول شخص: جيم"]
         wid = _make_variant(variants[0], variants, "first_one", max_readers=1)
         w = _w(wid)
-        uid = _find_reader_away_from_first(w, variants)
-        self.assertIsNotNone(uid)
-        self.assertNotEqual(resolve_variant(w, uid), variants[0])
-        sender_texts, reader_texts = self._read(wid, _Reader(uid))
-        self._assert_notification_matches(sender_texts, w, _Reader(uid), variants)
-        self._assert_reader_saw_only_its_variant(reader_texts, w, _Reader(uid), variants)
+        sender_texts, reader_texts = self._read(wid, _Reader(READER_A))
+        self.assertEqual(resolve_variant(w, READER_A), variants[0])
+        self._assert_notification_matches(sender_texts, w, _Reader(READER_A), variants)
+        self._assert_reader_saw_only_its_variant(reader_texts, w, _Reader(READER_A), variants)
 
 
 class TestCompleteReadFlowCustom(_FlowCase):
