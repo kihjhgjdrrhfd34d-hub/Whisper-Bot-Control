@@ -4,8 +4,10 @@ handlers/variant_whisper.py — Variant Whisper Wizard (Stage 2)
 Collects 2..5 text variants from a user in a private chat. Each reader will
 see exactly one deterministic variant (see services.whisper_service.resolve_variant).
 
-Stage 2 only creates a *draft* (whisper_drafts row) — no whisper is created,
-no inline query, no dashboard. Sharing/inline is a later stage.
+Stage 2 creates a *draft* (whisper_drafts row) — no whisper is created yet.
+The completion message offers a "📤 مشاركة الهمسة" button that opens the
+inline query list (handlers/inline.py, "v:" prefix) to pick the type and
+post the whisper. There is no dashboard from this wizard itself.
 
 Flow:
   1. User taps "🧬 همسة متغيرة" in the main menu → callback vwhisper_start.
@@ -191,10 +193,14 @@ def _finalize_variant_draft(bot, user_id: int, variants: list, user_states: dict
         bot.send_message(user_id, "❌ فشل تجهيز المسودة.")
         return
 
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(InlineKeyboardButton("📤 مشاركة الهمسة", switch_inline_query=f"v:{draft['id']}"))
+
     bot.send_message(
         user_id,
         f"✅ تم تجهيز مسودة الهمسة المتغيرة!\n\n"
         f"النسخ ({len(variants)}):\n{_preview_text(variants)}\n\n"
-        "ستتمكن من مشاركتها قريباً.",
+        "اضغط زر المشاركة، ثم اختر نوع الهمسة من القائمة.",
+        reply_markup=kb,
     )
     user_states.pop(user_id, None)

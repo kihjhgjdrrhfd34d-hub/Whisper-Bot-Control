@@ -11,9 +11,12 @@ Covers:
   4. Empty / media / command texts are rejected (except /cancel).
   5. /cancel and the cancel button clear the state safely.
   6. "✅ تم" (>= 2 variants) creates a *draft only*:
-       category="variant", content=first variant,
-       conditions_data={"variants": [...]} — no whisper, no inline button.
+      category="variant", content=first variant,
+      conditions_data={"variants": [...]} — no whisper, no inline button.
   7. The variant draft coexists with conditional (cw) drafts without collision.
+  8. Stage-2 completion shows a "📤 مشاركة الهمسة" button (switch_inline_query
+     "v:<draft_id>") with no variant-text leak, and the full path
+     wizard → ✅ تم → share → inline v: → chosen → whisper (draft consumed once).
 """
 import json
 import os
@@ -124,16 +127,35 @@ def _alerts_shown():
             if len(c.args) >= 2 and isinstance(c.args[1], str)]
 
 
-def _has_switch_inline_button():
+def _switch_inline_queries():
+    queries = []
     for c in bot.send_message.call_args_list:
         kb = (c.kwargs or {}).get("reply_markup")
         if not kb or not hasattr(kb, "keyboard"):
             continue
         for row in kb.keyboard:
             for btn in row:
-                if getattr(btn, "switch_inline_query", None):
-                    return True
-    return False
+                q = getattr(btn, "switch_inline_query", None)
+                if q:
+                    queries.append(q)
+    return queries
+
+
+def _leaks_variant_text_in_keyboards():
+    leaks = []
+    for c in bot.send_message.call_args_list:
+        kb = (c.kwargs or {}).get("reply_markup")
+        if not kb or not hasattr(kb, "keyboard"):
+            continue
+        for row in kb.keyboard:
+            for btn in row:
+                payload = " ".join(filter(None, [
+                    getattr(btn, "text", None),
+                    getattr(btn, "switch_inline_query", None),
+                    getattr(btn, "callback_data", None),
+                ]))
+                leaks.append(payload)
+    return leaks
 
 
 def _whisper_count(sender_id):
@@ -141,6 +163,41 @@ def _whisper_count(sender_id):
         return conn.execute(
             "SELECT COUNT(*) FROM whispers WHERE sender_id=?", (sender_id,)
         ).fetchone()[0]
+
+
+def _make_inline_query(user_id, query_text):
+    q = MagicMock()
+    q.id = f"iq_{user_id}_{abs(hash(query_text)) % (10 ** 8)}"
+    q.query = query_text
+    q.offset = ""
+    q._chat = None
+    q.from_user = _make_user(user_id, f"user{user_id}", f"User{user_id}")
+    return q
+
+
+def _make_chosen_inline_result(user_id, result_id, query_text="", inline_message_id="im_v_e2e"):
+    r = MagicMock()
+    r.result_id = result_id
+    r.query = query_text
+    r.inline_message_id = inline_message_id
+    r.from_user = _make_user(user_id, f"user{user_id}", f"User{user_id}")
+    return r
+
+
+def _dispatch_inline(query):
+    for handler in bot.inline_handlers:
+        if bot._test_message_handler(handler, query):
+            handler['function'](query)
+            return handler['function']
+    return None
+
+
+def _dispatch_chosen_inline(result):
+    for handler in bot.chosen_inline_handlers:
+        if bot._test_message_handler(handler, result):
+            handler['function'](result)
+            return handler['function']
+    return None
 
 
 class TestVariantWizardFlow(unittest.TestCase):
@@ -220,8 +277,13 @@ class TestVariantWizardFlow(unittest.TestCase):
         pending = get_pending_draft(SENDER_ID)
         self.assertEqual(pending["id"], draft["id"])
         self.assertEqual(_whisper_count(SENDER_ID), 0, "draft only — no whisper")
-        self.assertFalse(_has_switch_inline_button(),
-                         "no inline share button in stage 2")
+        queries = _switch_inline_queries()
+        self.assertEqual(queries, [f"v:{draft['id']}"],
+                         "share button must switch_inline_query to the v: draft list")
+        leak_payloads = _leaks_variant_text_in_keyboards()
+        for payload in leak_payloads:
+            self.assertNotIn("نسخة أولى", payload, "variant text must not leak in keyboards")
+            self.assertNotIn("نسخة ثانية", payload, "variant text must not leak in keyboards")
 
     def test_five_variants_auto_finalize(self):
         _dispatch_callback(_make_callback(SENDER_ID, "vwhisper_start"))
@@ -340,6 +402,100 @@ class TestVariantWizardFlow(unittest.TestCase):
         self.assertIn("variant", categories)
         self.assertIn("", categories)
         self.assertEqual(_whisper_count(SENDER_ID), 0)
+
+
+class TestVariantWizardShareE2E(unittest.TestCase):
+    """Full path: wizard → ✅ تم → share button → inline v: → chosen → whisper."""
+
+    @classmethod
+    def setUpClass(cls):
+        db.init_db()
+        init_envelope_db()
+        init_whisper_conditions_db()
+        bot.send_message = MagicMock(return_value=MagicMock(message_id=1, chat=None))
+        bot.answer_callback_query = MagicMock()
+        bot.answer_inline_query = MagicMock()
+        bot.edit_message_text = MagicMock()
+        bot.edit_message_reply_markup = MagicMock()
+        bot.reply_to = MagicMock(return_value=MagicMock(message_id=2, chat=None))
+        bot.delete_message = MagicMock()
+        bot.get_me = MagicMock(return_value=MagicMock(username="testbot"))
+        bot.get_chat_member = MagicMock(return_value=MagicMock(status="member"))
+        if not any(getattr(h['function'], '__name__', '') == 'vwhisper_start'
+                   for h in bot.callback_query_handlers):
+            botmod.register_all_handlers()
+
+    def setUp(self):
+        user_states.clear()
+        delete_draft(SENDER_ID)
+        db.delete_pending_media(SENDER_ID)
+        bot.send_message.reset_mock()
+        bot.answer_callback_query.reset_mock()
+        bot.answer_inline_query.reset_mock()
+        bot.edit_message_text.reset_mock()
+        bot.edit_message_reply_markup.reset_mock()
+        bot.reply_to.reset_mock()
+        bot.delete_message.reset_mock()
+        db.upsert_user(SENDER_ID, "sender", "Sender", None)
+
+    def _run_wizard(self, variants):
+        _dispatch_callback(_make_callback(SENDER_ID, "vwhisper_start"))
+        for v in variants:
+            _dispatch_message(_make_message(SENDER_ID, v))
+        _dispatch_callback(_make_callback(SENDER_ID, "vwhisper_done"))
+        return get_draft(SENDER_ID)
+
+    def _inline_result_ids(self):
+        if not bot.answer_inline_query.called:
+            return []
+        return [r.id for r in bot.answer_inline_query.call_args[0][1]]
+
+    def _inline_result_texts(self):
+        if not bot.answer_inline_query.called:
+            return []
+        return [r.input_message_content.message_text
+                for r in bot.answer_inline_query.call_args[0][1]]
+
+    def test_full_path_share_to_whisper(self):
+        variants = ["نسخة أولى سرية", "نسخة ثانية سرية", "نسخة ثالثة سرية"]
+        draft = self._run_wizard(variants)
+        self.assertIsNotNone(draft)
+        self.assertEqual(draft["category"], "variant")
+        self.assertEqual(draft["status"], "pending")
+        self.assertEqual(json.loads(draft["conditions_data"]),
+                         {"variants": variants})
+
+        # Share button after ✅ تم: switch_inline_query → v:<draft_id>.
+        queries = _switch_inline_queries()
+        self.assertEqual(queries, [f"v:{draft['id']}"])
+
+        # Inline v:<draft_id> → 5 type placeholders, no variant text leak.
+        _dispatch_inline(_make_inline_query(SENDER_ID, f"v:{draft['id']}"))
+        ids = self._inline_result_ids()
+        self.assertEqual(len(ids), 5)
+        for wtype in ("everyone", "first_one", "first_three", "first_five", "custom"):
+            self.assertIn(f"v:{wtype}:{draft['id']}", ids)
+        for text in self._inline_result_texts():
+            for v in variants:
+                self.assertNotIn(v, text, "variant text must never leak into inline results")
+
+        # Choose a type → whisper created from the draft; draft consumed once.
+        _dispatch_chosen_inline(_make_chosen_inline_result(
+            SENDER_ID, f"v:everyone:{draft['id']}"))
+        with db.get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM whispers WHERE sender_id=? ORDER BY rowid DESC LIMIT 1",
+                (SENDER_ID,),
+            ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["content"], variants[0])
+        self.assertEqual(row["whisper_type"], "everyone")
+        self.assertEqual(row["max_readers"], 0)
+        self.assertEqual(json.loads(row["conditions_data"]),
+                         {"variants": variants})
+        self.assertIsNone(get_draft(SENDER_ID), "draft must be consumed exactly once")
+        self.assertIsNone(get_pending_draft(SENDER_ID),
+                          "pending draft must be gone after consumption")
 
 
 if __name__ == "__main__":
