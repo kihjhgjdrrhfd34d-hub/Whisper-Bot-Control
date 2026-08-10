@@ -568,8 +568,14 @@ def add_reader_if_new(whisper_id: str, user_id: int) -> bool:
 
 def record_whisper_read(whisper_id: str, user_id: int) -> bool:
     with get_conn() as conn:
+        # FOR UPDATE serializes concurrent record_whisper_read for the same
+        # whisper: a second transaction blocks here until the first commits,
+        # so the conditional INSERT below always sees the real committed count
+        # and can never exceed max_readers (no such serialization in SQLite's
+        # sibling — SQLite relies on BEGIN IMMEDIATE instead).
         w = conn.execute(
-            "SELECT whisper_type, max_readers FROM whispers WHERE whisper_id=%s",
+            "SELECT whisper_type, max_readers FROM whispers WHERE whisper_id=%s "
+            "FOR UPDATE",
             (whisper_id,),
         ).fetchone()
         wtype = w["whisper_type"] if w else None
@@ -582,10 +588,14 @@ def record_whisper_read(whisper_id: str, user_id: int) -> bool:
             # insert conditionally so concurrent requests can never exceed the
             # reader limit. limit == 1 keeps the historical first_one behavior
             # (no auto-lock — gating is handled by can_read_whisper).
+            # ON CONFLICT DO NOTHING turns a same-user repeat read into a
+            # graceful False instead of an IntegrityError (behavior change
+            # confined to this INSERT; every other path is unchanged).
             cur = conn.execute(
                 "INSERT INTO whisper_readers (whisper_id, user_id) "
                 "SELECT %s, %s "
-                "WHERE (SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=%s) < %s",
+                "WHERE (SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=%s) < %s "
+                "ON CONFLICT (whisper_id, user_id) DO NOTHING",
                 (whisper_id, user_id, whisper_id, limit),
             )
             inserted = cur.rowcount
