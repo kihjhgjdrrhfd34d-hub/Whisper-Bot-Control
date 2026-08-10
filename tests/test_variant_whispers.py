@@ -237,7 +237,8 @@ class TestResolveVariantConditions(unittest.TestCase):
         picked = resolve_variant(w, READER_A)
         self.assertIn(picked, ["أ", "ب", "ج"])
 
-    def test_sender_admin_still_sees_original_content(self):
+    def test_sender_notification_shows_reader_variant(self):
+        # The stored content is NOT touched; only the notification text changes.
         cond = {"variants": ["أ", "ب", "ج"]}
         wid = create_whisper(SENDER, "النص الأصلي", "everyone", conditions_data=cond)
         w = dict(get_whisper(wid))
@@ -246,6 +247,7 @@ class TestResolveVariantConditions(unittest.TestCase):
         from services.whisper_service import (
             build_read_receipt_message,
             build_first_three_read_notification,
+            resolve_variant,
         )
 
         class _User:
@@ -253,12 +255,15 @@ class TestResolveVariantConditions(unittest.TestCase):
             username = "reader_a"
             first_name = "ReaderA"
 
+        expected = resolve_variant(w, READER_A)
+        self.assertIn(expected, ["أ", "ب", "ج"])
+
         receipt = build_read_receipt_message(_User(), w)
-        self.assertIn("النص الأصلي", receipt)
-        self.assertNotIn("نسخة", receipt)
+        self.assertIn(expected, receipt)
+        self.assertNotIn("النص الأصلي", receipt)
 
         notify = build_first_three_read_notification(_User(), w)
-        self.assertIn("النص الأصلي", notify)
+        self.assertIn(expected, notify)
 
 
 if __name__ == "__main__":

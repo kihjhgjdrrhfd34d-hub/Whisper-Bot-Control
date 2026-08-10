@@ -211,11 +211,17 @@ def get_user_display(user) -> str:
 # ── Message builders (pure data → string) ────────────────────────────
 
 def _build_read_notification_text(user, w: dict) -> str:
-    """Build a detailed notification text with reader info and whisper content."""
+    """Build a detailed notification text with reader info and whisper content.
+
+    For variant whispers the reader's own deterministic variant is shown
+    (resolve_variant), matching exactly what the reader saw. For all other
+    whispers the stored ``content`` is shown unchanged (resolve_variant falls
+    back to ``content`` when no valid variants exist).
+    """
     w = dict(w)
     username_display = f"@{escape(user.username)}" if user.username else "لا يوجد معرف"
     name_display = escape(user.first_name) if user.first_name else "مستخدم مجهول"
-    content_raw = w.get("content") or ""
+    content_raw = resolve_variant(w, user.id)
     content_escaped = escape(content_raw)
     media_line = ""
     mt = w.get("message_type")
@@ -265,11 +271,17 @@ def build_first_one_notification(user, w: dict) -> str:
 
 
 def build_first_three_read_notification(user, w: dict) -> str:
-    """Build a notification for a first_three read with reader info and content."""
+    """Build a notification for a first_three read with reader info and content.
+
+    For variant whispers the reader's own deterministic variant is shown
+    (resolve_variant), matching exactly what the reader saw. For all other
+    whispers the stored ``content`` is shown unchanged (resolve_variant falls
+    back to ``content`` when no valid variants exist).
+    """
     w = dict(w)
     username_str = f"@{user.username}" if user.username else "لا يوجد"
     name_str = user.first_name or "مستخدم مجهول"
-    content = w.get("content") or ""
+    content = resolve_variant(w, user.id)
     lines = [
         "👁 تم مشاهدة همستك",
         "",
