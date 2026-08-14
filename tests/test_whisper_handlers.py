@@ -403,11 +403,13 @@ class TestCloseWhisper(unittest.TestCase):
         db.close_whisper("no_such_wid")
 
     def test_closed_whisper_cannot_be_replied_to(self):
+        # Closing blocks reading.  It also keeps strangers out of replies
+        # (user 1 is neither the sender nor a registered reader).
         from database.replies import can_reply_to_whisper
         db.close_whisper(self.wid)
         ok, reason = can_reply_to_whisper(self.wid, 1)
         self.assertFalse(ok)
-        self.assertEqual(reason, "whisper_locked")
+        self.assertEqual(reason, "not_participant")
 
 
 class TestPinWhisper(unittest.TestCase):

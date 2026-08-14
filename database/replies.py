@@ -246,10 +246,11 @@ def can_reply_to_whisper(whisper_id: str, user_id: int):
     Rules
     -----
     - Whisper must exist.
-    - Whisper must not be closed.
-    - When locked manually (non-destructive): all replies blocked.
-    - When locked destructively: sender and existing readers may reply.
+    - Closing or locking the whisper never disables replies — it only stops
+      new reads.  An authorised participant (sender or an existing reader)
+      keeps the ability to reply even after the whisper is closed / locked.
     - user_id must be the sender OR an authorised reader.
+    - Non-participants cannot reply even when the whisper is open.
     - Reply cap must not be exceeded.
     - Ban check is the caller's responsibility.
 
@@ -266,12 +267,6 @@ def can_reply_to_whisper(whisper_id: str, user_id: int):
         return False, "whisper_not_found"
 
     w = dict(w)
-    if w.get("is_closed", 0):
-        return False, "whisper_locked"
-
-    # ── Manual lock (non-destructive): block everyone ───────────────
-    if w["is_locked"] and not w.get("is_destructive", 0):
-        return False, "whisper_locked"
 
     # ── Determine if user is a participant ──────────────────────────
     is_sender = (user_id == w["sender_id"])
@@ -283,10 +278,6 @@ def can_reply_to_whisper(whisper_id: str, user_id: int):
                 " WHERE whisper_id=? AND user_id=?",
                 (whisper_id, user_id),
             ).fetchone() is not None
-
-    # ── Destructive lock: only participants may reply ───────────────
-    if w["is_locked"] and not is_sender and not is_reader:
-        return False, "whisper_locked"
 
     # ── Non-participants cannot reply (even when unlocked) ──────────
     if not is_sender and not is_reader:

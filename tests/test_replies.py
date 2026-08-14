@@ -264,10 +264,12 @@ class TestCanReplyToWhisper(unittest.TestCase):
         self.assertEqual(reason, "not_participant")
 
     def test_locked_whisper_blocks_reply(self):
+        # Locking the whisper no longer disables replies for participants —
+        # it only stops new reads.  The sender stays authorised to reply.
         db.toggle_whisper_lock(self.wid)
         ok, reason = can_reply_to_whisper(self.wid, 80050)
-        self.assertFalse(ok)
-        self.assertEqual(reason, "whisper_locked")
+        self.assertTrue(ok)
+        self.assertEqual(reason, "ok")
         db.toggle_whisper_lock(self.wid)  # restore
 
     def test_deleted_whisper_blocks_reply(self):
@@ -284,6 +286,111 @@ class TestCanReplyToWhisper(unittest.TestCase):
         ok, reason = can_reply_to_whisper(wid3, 80050)
         self.assertFalse(ok)
         self.assertEqual(reason, "reply_cap_reached")
+
+
+class TestReplyRemainsAfterWhisperClosed(unittest.TestCase):
+    """Regression: closing/locking a whisper must NOT disable its reply system.
+
+    Closing the whisper only stops new reads.  An authorised participant
+    (sender or an existing reader) keeps the ability to reply, existing
+    replies are never deleted, and all unrelated reply protections
+    (non-participant, reply cap, deleted whisper) stay unchanged.
+    """
+
+    def setUp(self):
+        _boot()
+        db.upsert_user(80100, "reg_sender", "RS", None)
+        db.upsert_user(80101, "reg_reader", "RR", None)
+        db.upsert_user(80102, "reg_other", "RO", None)
+        self.wid = db.create_whisper(80100, "regression", "everyone")
+        db.add_reader_if_new(self.wid, 80101)
+
+    def test_reply_works_before_close(self):
+        ok, reason = can_reply_to_whisper(self.wid, 80101)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "ok")
+        rid = create_reply(self.wid, 80101, content="before close")
+        self.assertIsNotNone(rid)
+        self.assertEqual(count_replies(self.wid), 1)
+
+    def test_reply_works_after_close(self):
+        db.close_whisper(self.wid)
+        w = dict(db.get_whisper(self.wid))
+        self.assertEqual(w.get("is_closed"), 1)
+        self.assertEqual(w.get("is_locked"), 1)
+        ok, reason = can_reply_to_whisper(self.wid, 80101)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "ok")
+        rid = create_reply(self.wid, 80101, content="after close")
+        self.assertIsNotNone(rid)
+        self.assertEqual(count_replies(self.wid), 1)
+
+    def test_new_reply_from_reader_after_close(self):
+        db.close_whisper(self.wid)
+        # An authorised reader can start a brand-new reply after the close.
+        ok, reason = can_reply_to_whisper(self.wid, 80101)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "ok")
+        rid = create_reply(self.wid, 80101, content="new reply after close")
+        self.assertIsNotNone(rid)
+        row = get_reply(rid)
+        self.assertEqual(row["content"], "new reply after close")
+
+    def test_sender_can_reply_after_close(self):
+        db.close_whisper(self.wid)
+        ok, reason = can_reply_to_whisper(self.wid, 80100)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "ok")
+
+    def test_lock_does_not_disable_reply_for_reader(self):
+        db.toggle_whisper_lock(self.wid)
+        ok, reason = can_reply_to_whisper(self.wid, 80101)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "ok")
+
+    def test_reader_limit_reached_does_not_disable_reply(self):
+        db.upsert_user(80103, "reg_r3", "R3", None)
+        wid3 = db.create_whisper(80100, "reg first_three", "first_three",
+                                 max_readers=3)
+        # record_whisper_read (not add_reader_if_new) performs the type-aware
+        # auto-lock when the reader limit is reached.
+        db.record_whisper_read(wid3, 80101)
+        db.record_whisper_read(wid3, 80102)
+        db.record_whisper_read(wid3, 80103)  # third reader → auto-lock
+        w = dict(db.get_whisper(wid3))
+        self.assertEqual(w.get("is_locked"), 1)
+        ok, reason = can_reply_to_whisper(wid3, 80101)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "ok")
+
+    def test_existing_replies_not_deleted_after_close(self):
+        rid = create_reply(self.wid, 80101, content="keep me")
+        db.close_whisper(self.wid)
+        self.assertIsNotNone(get_reply(rid))
+        self.assertEqual(count_replies(self.wid), 1)
+
+    def test_unrelated_reply_behavior_unchanged_after_close(self):
+        # Non-participant still blocked.
+        db.close_whisper(self.wid)
+        ok, reason = can_reply_to_whisper(self.wid, 80102)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "not_participant")
+
+    def test_unrelated_reply_behavior_cap_unchanged(self):
+        db.close_whisper(self.wid)
+        for i in range(MAX_REPLIES_PER_WHISPER):
+            create_reply(self.wid, 80100, content=f"c{i}")
+        ok, reason = can_reply_to_whisper(self.wid, 80100)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "reply_cap_reached")
+
+    def test_unrelated_reply_behavior_deleted_whisper_unchanged(self):
+        wid_del = db.create_whisper(80100, "deleted after close", "everyone")
+        db.close_whisper(wid_del)
+        db.delete_whisper(wid_del)
+        ok, reason = can_reply_to_whisper(wid_del, 80100)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "whisper_not_found")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

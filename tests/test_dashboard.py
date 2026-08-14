@@ -124,12 +124,14 @@ class TestDashboardIsClosedIntegration(unittest.TestCase):
         self.assertTrue(can)
 
     def test_can_reply_to_whisper_when_closed(self):
+        # Closing the whisper only blocks reading — an authorised reader keeps
+        # the ability to reply.
         wid = db.create_whisper(8001, "closed reply test", "everyone")
         db.add_reader(wid, 8002)
         db.close_whisper(wid)
         ok, reason = can_reply_to_whisper(wid, 8002)
-        self.assertFalse(ok)
-        self.assertEqual(reason, "whisper_locked")
+        self.assertTrue(ok)
+        self.assertEqual(reason, "ok")
 
     def test_can_reply_to_whisper_when_not_closed(self):
         wid = db.create_whisper(8001, "open reply test", "everyone")

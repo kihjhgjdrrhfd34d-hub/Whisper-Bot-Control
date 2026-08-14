@@ -178,12 +178,6 @@ def can_reply_to_whisper(whisper_id: str, user_id: int):
         return False, "whisper_not_found"
 
     w = dict(w)
-    if w.get("is_closed", 0):
-        return False, "whisper_locked"
-
-    # Manual lock (non-destructive): block everyone
-    if w["is_locked"] and not w.get("is_destructive", 0):
-        return False, "whisper_locked"
 
     # Determine if user is a participant
     is_sender = (user_id == w["sender_id"])
@@ -195,10 +189,6 @@ def can_reply_to_whisper(whisper_id: str, user_id: int):
                 " WHERE whisper_id=%s AND user_id=%s",
                 (whisper_id, user_id),
             ).fetchone() is not None
-
-    # Destructive lock: only participants may reply
-    if w["is_locked"] and not is_sender and not is_reader:
-        return False, "whisper_locked"
 
     # Non-participants cannot reply (even when unlocked)
     if not is_sender and not is_reader:

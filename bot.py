@@ -278,9 +278,12 @@ def start_cmd(msg: telebot.types.Message):
 
         w_dict = dict(whisper_obj)
 
-        from database import can_read_whisper
-        can, reason = can_read_whisper(whisper_id, user.id)
-        if not can and reason != "sender":
+        # Reply authorisation stays tied to the reply system, not to reading.
+        # Closing/locking the whisper only stops new reads — participants
+        # (sender or an existing reader) may keep replying.
+        from database.replies import can_reply_to_whisper
+        ok, reason = can_reply_to_whisper(whisper_id, user.id)
+        if not ok:
             bot.send_message(msg.chat.id, "⛔ لا يمكنك الرد على هذه الهمسة.")
             return
 

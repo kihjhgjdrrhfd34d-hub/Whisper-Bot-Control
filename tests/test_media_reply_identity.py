@@ -573,7 +573,7 @@ class TestAccessRulesUnchanged(unittest.TestCase):
         self.assertTrue(ok, "Reader should be able to reply before lock")
 
     def test_first_three_locks_after_three_readers(self):
-        """After 3 readers, first_three whisper auto-locks and replies are blocked."""
+        """After 3 readers, first_three whisper auto-locks but readers keep replying."""
         wid = create_whisper(
             sender_id=SENDER, content="", whisper_type="first_three",
             max_readers=3,
@@ -585,9 +585,10 @@ class TestAccessRulesUnchanged(unittest.TestCase):
         record_whisper_read(wid, 40003)
         record_whisper_read(wid, 40004)  # 3rd reader → auto-lock
 
+        self.assertEqual(get_whisper(wid)["is_locked"], 1, "Whisper must be locked")
         ok, reason = can_reply_to_whisper(wid, READER)
-        self.assertFalse(ok, "After 3 readers, whisper is locked")
-        self.assertEqual(reason, "whisper_locked")
+        self.assertTrue(ok, "Reader can still reply after auto-lock")
+        self.assertEqual(reason, "ok")
 
     def test_everyone_any_reader_can_reply(self):
         wid = create_whisper(
@@ -638,8 +639,8 @@ class TestAccessRulesUnchanged(unittest.TestCase):
         lock_whisper(wid)
 
         ok, reason = can_reply_to_whisper(wid, READER)
-        self.assertFalse(ok)
-        self.assertEqual(reason, "whisper_locked")
+        self.assertTrue(ok, "Reader can still reply after the whisper is locked")
+        self.assertEqual(reason, "ok")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
