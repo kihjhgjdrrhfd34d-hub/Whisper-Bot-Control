@@ -574,7 +574,8 @@ def record_whisper_read(whisper_id: str, user_id: int) -> bool:
         # and can never exceed max_readers (no such serialization in SQLite's
         # sibling — SQLite relies on BEGIN IMMEDIATE instead).
         w = conn.execute(
-            "SELECT whisper_type, max_readers FROM whispers WHERE whisper_id=%s "
+            "SELECT whisper_type, max_readers, is_closed, is_locked"
+            " FROM whispers WHERE whisper_id=%s "
             "FOR UPDATE",
             (whisper_id,),
         ).fetchone()
@@ -582,6 +583,16 @@ def record_whisper_read(whisper_id: str, user_id: int) -> bool:
         # Nonexistent whispers fall through to the unrestricted insert path,
         # which raises a foreign-key error (historical behavior).
         limit = effective_max_readers(dict(w)) if w else 0
+
+        if w and (w["is_closed"] or w["is_locked"]):
+            # TOCTOU guard: a concurrent close_whisper / lock_whisper /
+            # toggle_whisper_lock may have committed after the caller's
+            # can_read_whisper snapshot but before this insert.  Because the
+            # SELECT carries FOR UPDATE it blocked until that commit became
+            # visible, so this re-check is already under the row lock — a read
+            # can never be recorded after the whisper was closed/locked.
+            conn.commit()
+            return False
 
         if limit > 0:
             # Limited types (first_one / first_three / first_five / future):

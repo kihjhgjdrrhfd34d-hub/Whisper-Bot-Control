@@ -725,13 +725,23 @@ def record_whisper_read(whisper_id: str, user_id: int) -> bool:
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         w = conn.execute(
-            "SELECT whisper_type, max_readers FROM whispers WHERE whisper_id=?",
+            "SELECT whisper_type, max_readers, is_closed, is_locked"
+            " FROM whispers WHERE whisper_id=?",
             (whisper_id,),
         ).fetchone()
         wtype = w["whisper_type"] if w else None
         # Nonexistent whispers fall through to the unrestricted insert path,
         # which raises a foreign-key error (historical behavior).
         limit = effective_max_readers(dict(w)) if w else 0
+
+        if w and (w["is_closed"] or w["is_locked"]):
+            # TOCTOU guard: a concurrent close_whisper / lock_whisper /
+            # toggle_whisper_lock may have committed after the caller's
+            # can_read_whisper snapshot but before this insert.  Re-check the
+            # state under the same write lock so a read can never be recorded
+            # after the whisper was closed/locked — matches can_read_whisper.
+            conn.commit()
+            return False
 
         if limit > 0:
             # Limited types (first_one / first_three / first_five / future):

@@ -352,6 +352,44 @@ class TestRecordWhisperRead(unittest.TestCase):
         with self.assertRaises(Exception):
             db.record_whisper_read("no_such_whisper", 60001)
 
+    def test_record_read_closed_whisper_rejected(self):
+        """A read must never be recorded after the whisper is closed
+        (TOCTOU guard: record_whisper_read re-checks is_closed under its
+        write lock, in case close_whisper committed between the caller's
+        can_read_whisper snapshot and the reader insert)."""
+        wid = create_whisper(60010, "closed", "everyone")
+        db.close_whisper(wid)
+        result = db.record_whisper_read(wid, 11)
+        self.assertFalse(result)
+        self.assertEqual(reader_count(wid), 0)
+
+    def test_record_read_locked_whisper_rejected(self):
+        """A read must never be recorded after the whisper is locked."""
+        wid = create_whisper(60010, "locked", "everyone")
+        toggle_whisper_lock(wid)
+        self.assertEqual(dict(get_whisper(wid))["is_locked"], 1)
+        result = db.record_whisper_read(wid, 11)
+        self.assertFalse(result)
+        self.assertEqual(reader_count(wid), 0)
+
+    def test_record_read_closed_first_one_rejected(self):
+        """first_one: closing before the first read also rejects the read."""
+        wid = create_whisper(60010, "closed f1", "first_one")
+        db.close_whisper(wid)
+        result = db.record_whisper_read(wid, 11)
+        self.assertFalse(result)
+        self.assertEqual(reader_count(wid), 0)
+
+    def test_record_read_after_auto_lock_rejected(self):
+        """first_three: once the limit auto-locks, further reads are rejected."""
+        wid = create_whisper(60010, "auto lock", "first_three")
+        self.assertTrue(db.record_whisper_read(wid, 11))
+        self.assertTrue(db.record_whisper_read(wid, 12))
+        self.assertTrue(db.record_whisper_read(wid, 13))   # 3rd → auto-lock
+        self.assertEqual(dict(get_whisper(wid))["is_locked"], 1)
+        self.assertFalse(db.record_whisper_read(wid, 14))
+        self.assertEqual(reader_count(wid), 3)
+
 
 class TestCuriousOnes(unittest.TestCase):
     """Test curious ones tracking."""

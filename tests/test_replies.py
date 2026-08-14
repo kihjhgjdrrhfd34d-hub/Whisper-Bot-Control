@@ -28,6 +28,7 @@ import sys
 import unittest
 import tempfile
 import atexit
+import threading
 from unittest.mock import MagicMock, patch
 
 # ── Redirect DB before any import ────────────────────────────────────────────
@@ -149,6 +150,65 @@ class TestReplyCap(unittest.TestCase):
         for i in range(3):
             create_reply(self.wid, 80010, content=f"r{i}")
         self.assertEqual(count_replies(self.wid), 3)
+
+
+class TestReplyCapConcurrency(unittest.TestCase):
+    """Concurrent create_reply calls must never exceed MAX_REPLIES_PER_WHISPER.
+
+    The cap check used to be a separate SELECT COUNT followed by an INSERT
+    (check-then-act), so two concurrent senders could both read a count below
+    the cap and both insert.  The conditional INSERT under BEGIN IMMEDIATE
+    re-reads the count under the write lock, so exactly the remaining slots
+    are filled — never more.
+    """
+
+    def setUp(self):
+        _boot()
+        db.upsert_user(80090, "race_sender", "Race", None)
+        self.wid = db.create_whisper(80090, "cap race", "everyone")
+
+    def test_concurrent_replies_never_exceed_cap(self):
+        remaining = 5
+        for i in range(MAX_REPLIES_PER_WHISPER - remaining):
+            self.assertIsNotNone(
+                create_reply(self.wid, 80090, content=f"seed {i}"),
+                f"seed {i} must succeed",
+            )
+
+        n_attempts = 20
+        barrier = threading.Barrier(n_attempts)
+        accepted = []
+        errors = []
+
+        def _reply(idx):
+            barrier.wait()
+            try:
+                rid = create_reply(self.wid, 80090, content=f"burst {idx}")
+                if rid is not None:
+                    accepted.append(rid)
+            except Exception as exc:  # pragma: no cover - unexpected
+                errors.append(str(exc))
+
+        threads = [
+            threading.Thread(target=_reply, args=(i,)) for i in range(n_attempts)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(errors, [], f"unexpected errors: {errors}")
+        total = count_replies(self.wid)
+        self.assertLessEqual(
+            total, MAX_REPLIES_PER_WHISPER,
+            f"reply cap exceeded: {total} > {MAX_REPLIES_PER_WHISPER}",
+        )
+        self.assertEqual(
+            len(accepted), remaining,
+            f"exactly the remaining {remaining} slots must be filled, "
+            f"got {len(accepted)} (total={total})",
+        )
+        self.assertEqual(total, MAX_REPLIES_PER_WHISPER)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -78,31 +78,32 @@ def create_reply(
         return None
 
     with get_conn() as conn:
-        parent = conn.execute(
-            "SELECT whisper_id FROM whispers WHERE whisper_id=%s", (whisper_id,)
-        ).fetchone()
-        if not parent:
-            logger.debug(f"create_reply: whisper {whisper_id!r} not found")
-            return None
-
-        cnt = conn.execute(
-            "SELECT COUNT(*) FROM whisper_replies WHERE whisper_id=%s",
-            (whisper_id,),
-        ).fetchone()["count"]
-        if cnt >= MAX_REPLIES_PER_WHISPER:
-            logger.debug(f"create_reply: reply cap reached for {whisper_id!r}")
-            return None
-
-        rid = str(uuid.uuid4())[:12]
+        # Serialise concurrent replies for the same whisper: the FOR UPDATE
+        # blocks a second create_reply until the first commits, so the count
+        # re-read below is never stale.  The existence + cap checks live in
+        # the same conditional INSERT, so two concurrent senders can never
+        # both pass the cap and a concurrently-deleted whisper is rejected
+        # atomically (the same pattern record_whisper_read uses in pg_core).
         conn.execute(
+            "SELECT whisper_id FROM whispers WHERE whisper_id=%s FOR UPDATE",
+            (whisper_id,),
+        )
+        rid = str(uuid.uuid4())[:12]
+        cur = conn.execute(
             """
             INSERT INTO whisper_replies
                 (reply_id, whisper_id, sender_id, parent_reply_id, content, media_type, file_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            SELECT %s, %s, %s, %s, %s, %s, %s
+            WHERE EXISTS (SELECT 1 FROM whispers WHERE whisper_id=%s)
+              AND (SELECT COUNT(*) FROM whisper_replies WHERE whisper_id=%s) < %s
             """,
-            (rid, whisper_id, sender_id, parent_reply_id, content or "", media_type, file_id),
+            (rid, whisper_id, sender_id, parent_reply_id, content or "", media_type, file_id,
+             whisper_id, whisper_id, MAX_REPLIES_PER_WHISPER),
         )
         conn.commit()
+        if cur.rowcount != 1:
+            logger.debug(f"create_reply: whisper {whisper_id!r} not found or reply cap reached")
+            return None
     return rid
 
 

@@ -132,33 +132,29 @@ def create_reply(
         return None
 
     with get_conn() as conn:
-        # Verify parent whisper exists
-        parent = conn.execute(
-            "SELECT whisper_id FROM whispers WHERE whisper_id=?", (whisper_id,)
-        ).fetchone()
-        if not parent:
-            logger.debug(f"create_reply: whisper {whisper_id!r} not found")
-            return None
-
-        # Enforce reply cap
-        cnt = conn.execute(
-            "SELECT COUNT(*) FROM whisper_replies WHERE whisper_id=?",
-            (whisper_id,),
-        ).fetchone()[0]
-        if cnt >= MAX_REPLIES_PER_WHISPER:
-            logger.debug(f"create_reply: reply cap reached for {whisper_id!r}")
-            return None
-
+        # The cap check and the whisper-existence check run inside the same
+        # write transaction as the INSERT.  BEGIN IMMEDIATE serialises
+        # concurrent writers, and the conditional INSERT re-reads the count
+        # under that lock, so two concurrent senders can never both pass the
+        # cap (the same pattern record_whisper_read uses for the reader limit).
+        conn.execute("BEGIN IMMEDIATE")
         rid = str(uuid.uuid4())[:12]
         conn.execute(
             """
             INSERT INTO whisper_replies
                 (reply_id, whisper_id, sender_id, parent_reply_id, content, media_type, file_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            SELECT ?, ?, ?, ?, ?, ?, ?
+            WHERE EXISTS (SELECT 1 FROM whispers WHERE whisper_id=?)
+              AND (SELECT COUNT(*) FROM whisper_replies WHERE whisper_id=?) < ?
             """,
-            (rid, whisper_id, sender_id, parent_reply_id, content or "", media_type, file_id),
+            (rid, whisper_id, sender_id, parent_reply_id, content or "", media_type, file_id,
+             whisper_id, whisper_id, MAX_REPLIES_PER_WHISPER),
         )
+        inserted = conn.execute("SELECT changes()").fetchone()[0]
         conn.commit()
+        if not inserted:
+            logger.debug(f"create_reply: whisper {whisper_id!r} not found or reply cap reached")
+            return None
     return rid
 
 
