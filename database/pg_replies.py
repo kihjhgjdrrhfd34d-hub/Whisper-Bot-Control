@@ -5,6 +5,7 @@ database/pg_replies.py — PostgreSQL implementation of all functions from datab
 import uuid
 import logging
 from database.postgres import get_conn, USE_POSTGRES
+from database.access_policy import actor_role, reply_gate
 
 logger = logging.getLogger(__name__)
 
@@ -180,25 +181,19 @@ def can_reply_to_whisper(whisper_id: str, user_id: int):
     w = dict(w)
 
     # Determine if user is a participant
-    is_sender = (user_id == w["sender_id"])
     is_reader = False
-    if not is_sender:
+    if user_id != w["sender_id"]:
         with get_conn() as conn:
             is_reader = conn.execute(
                 "SELECT 1 FROM whisper_readers"
                 " WHERE whisper_id=%s AND user_id=%s",
                 (whisper_id, user_id),
             ).fetchone() is not None
+    role = actor_role(w["sender_id"], user_id, is_reader)
 
-    # Non-participants cannot reply (even when unlocked)
-    if not is_sender and not is_reader:
-        return False, "not_participant"
-
-    current = count_replies(whisper_id)
-    if current >= MAX_REPLIES_PER_WHISPER:
-        return False, "reply_cap_reached"
-
-    return True, "ok"
+    # Authorisation via the shared policy layer.  Non-participants cannot
+    # reply (even when unlocked); closing/locking never disables replies.
+    return reply_gate(role, count_replies(whisper_id), MAX_REPLIES_PER_WHISPER)
 
 
 def get_whisper_participants(whisper_id: str) -> dict:

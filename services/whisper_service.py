@@ -21,6 +21,7 @@ from database import (
     add_curious, count_user_reads, search_users,
     effective_max_readers, get_reader_ordinal,
 )
+from database.access_policy import actor_role
 
 
 # ── Callback data parsing ────────────────────────────────────────────
@@ -39,7 +40,7 @@ def is_destructive_whisper(w: dict) -> bool:
 
 def is_own_whisper(user_id: int, w: dict) -> bool:
     """Check if the given user is the sender of the whisper."""
-    return user_id == w["sender_id"]
+    return actor_role(w["sender_id"], user_id, False) == "sender"
 
 
 def get_whisper_locked_state(w: dict) -> bool:
