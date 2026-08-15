@@ -167,6 +167,19 @@ def _reader_button_label(whisper_id, index, name, badge) -> str:
     return f"👤 {name}"
 
 
+def _reply_on_whisper_button(whisper_id: str) -> InlineKeyboardButton:
+    """Group-card reply button.
+
+    Visible to everyone in the group, but replying is authorised by the real
+    DB check in can_reply_to_whisper (sender, or an existing whisper_readers
+    member).  It is NOT gated by the whisper's timing/expiry.
+    """
+    return InlineKeyboardButton(
+        "↩️ رد على الهمسة",
+        callback_data=f"wsp_reply:whisper:{whisper_id}",
+    )
+
+
 def _extract_condition_config(w_dict: dict, condition_type: str) -> dict | None:
     """Extract config dict for a condition_type from whisper's conditions_data."""
     raw = w_dict.get("conditions_data")
@@ -243,6 +256,7 @@ def _build_opened_keyboard(whisper_id, readers=None):
             kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name, badge), callback_data="noop"))
         logger.info("[UI] _build_opened_keyboard names=%s whisper_id=%s wtype=%s",
                     names_added, whisper_id, wtype)
+    kb.add(_reply_on_whisper_button(whisper_id))
     return kb
 
 
@@ -349,6 +363,8 @@ def _update_group_keyboard(bot, whisper_id, w, call=None):
                 kb.add(InlineKeyboardButton(_reader_button_label(whisper_id, i, name, badge), callback_data="noop"))
         else:  # custom — لا نعرض أسماء القراء ولا أزرار التفاعل
             kb.add(InlineKeyboardButton(_OPENED_LABEL, callback_data="noop"))
+
+        kb.add(_reply_on_whisper_button(whisper_id))
 
         inline_msg_id = w.get("group_inline_message_id")
         group_chat_id = w.get("group_chat_id")

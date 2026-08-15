@@ -31,7 +31,7 @@ from database import (
 )
 from database.replies import count_replies, get_replies
 from database.envelope import create_draft, get_draft, update_draft_target
-from handlers._formatting import _get_sender_display, _fmt_username
+from handlers._formatting import _get_sender_display, _fmt_username, format_display_time
 from services.whisper_service import resolve_recipients
 
 logger = logging.getLogger(__name__)
@@ -126,9 +126,9 @@ def _format_time(iso_str) -> str:
     if not iso_str:
         return "—"
     try:
-        return iso_str[:16].replace("T", " ")
+        return format_display_time(iso_str, "%Y-%m-%d %H:%M")
     except Exception:
-        return str(iso_str)
+        return str(iso_str)[:16].replace("T", " ")
 
 
 

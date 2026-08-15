@@ -7,7 +7,7 @@ from database.contact_review import (
     get_pending_review, approve_review, reject_review,
 )
 from services.contact_review_service import build_review_message
-from handlers._formatting import _fmt_username, _get_sender_display
+from handlers._formatting import _fmt_username, _get_sender_display, format_display_time
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ def register_contact_whisper_handlers(bot: telebot.TeleBot, user_states: dict):
 
         sender = get_user(review["sender_id"])
         sender_name = _get_sender_display(review["sender_id"])
-        created = str(review["created_at"])[:16] if review["created_at"] else "—"
+        created = format_display_time(review["created_at"]) or "—"
 
         text = (
             "━━━━━━━━━━━━━━━━━━\n"

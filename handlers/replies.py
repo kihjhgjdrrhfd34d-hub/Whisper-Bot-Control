@@ -124,16 +124,16 @@ def _is_close_conv_callback(data: str) -> bool:
 
 
 def _format_time(iso_str) -> str:
-    """استخراج الوقت (HH:MM) من نص ISO زمني."""
+    """استخراج الوقت (HH:MM) من نص ISO زمني، معروضًا بتوقيت صنعاء."""
     if not iso_str:
         return ""
     try:
-        return iso_str[:16].replace("T", " ")[11:16]
+        return format_display_time(iso_str, "%H:%M")
     except Exception:
         return ""
 
 
-from handlers._formatting import _get_sender_display
+from handlers._formatting import _get_sender_display, format_display_time
 
 # ─────────────────────────────────────────────────────────────────────────────
 # بداية تدفق الرد: معالج الكولباك
@@ -214,7 +214,7 @@ def _handle_reply_callback(
         msg_map = {
             "whisper_not_found": "❌ الهمسة غير موجودة.",
             "whisper_locked":    "🔒 الهمسة مقفلة.",
-            "not_participant":   "⛔ فقط المرسل والقرّاء يمكنهم الرد.",
+            "not_participant":   "🔒 يجب قراءة الهمسة أولًا حتى تتمكن من الرد عليها.",
             "reply_cap_reached": f"⚠️ تم الوصول للحد الأقصى ({MAX_REPLIES_PER_WHISPER}).",
         }
         bot.answer_callback_query(

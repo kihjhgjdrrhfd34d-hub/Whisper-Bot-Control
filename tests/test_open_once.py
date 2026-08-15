@@ -69,8 +69,9 @@ class TestOpenOnceTextFirstOne(unittest.TestCase):
         # Verify the keyboard builder produces the opened keyboard
         readers = db.get_readers(self.wid)
         kb = _build_opened_keyboard(self.wid, readers=readers)
-        # Row 0: opened label, Row 1: completed progress, Row 2: reader name (Bob)
-        self.assertEqual(len(kb.keyboard), 3)
+        # Row 0: opened label, Row 1: completed progress, Row 2: reader name (Bob),
+        # Row 3: reply-on-whisper button (additive group-card reply)
+        self.assertEqual(len(kb.keyboard), 4)
         btn = kb.keyboard[0][0]
         self.assertEqual(btn.text, _OPENED_LABEL)
         self.assertEqual(btn.callback_data, "noop")
@@ -79,6 +80,9 @@ class TestOpenOnceTextFirstOne(unittest.TestCase):
         self.assertEqual(completed_btn.callback_data, "noop")
         name_btn = kb.keyboard[2][0]
         self.assertIn("Bob", name_btn.text)
+        reply_btn = kb.keyboard[3][0]
+        self.assertEqual(reply_btn.text, "↩️ رد على الهمسة")
+        self.assertEqual(reply_btn.callback_data, f"wsp_reply:whisper:{self.wid}")
 
     def test_stored_group_message_coords(self):
         """Whisper record should have group_inline_message_id stored."""
@@ -212,8 +216,9 @@ class TestOpenOnceMediaWhisper(unittest.TestCase):
 
         readers = db.get_readers(self.wid)
         kb = _build_opened_keyboard(self.wid, readers=readers)
-        # Row 0: opened label, Row 1: completed progress, Row 2: reader name (Bob)
-        self.assertEqual(len(kb.keyboard), 3)
+        # Row 0: opened label, Row 1: completed progress, Row 2: reader name (Bob),
+        # Row 3: reply-on-whisper button (additive group-card reply)
+        self.assertEqual(len(kb.keyboard), 4)
         btn = kb.keyboard[0][0]
         self.assertEqual(btn.text, _OPENED_LABEL)
         self.assertEqual(btn.callback_data, "noop")
@@ -222,6 +227,9 @@ class TestOpenOnceMediaWhisper(unittest.TestCase):
         self.assertEqual(completed_btn.callback_data, "noop")
         name_btn = kb.keyboard[2][0]
         self.assertIn("Bob", name_btn.text)
+        reply_btn = kb.keyboard[3][0]
+        self.assertEqual(reply_btn.text, "↩️ رد على الهمسة")
+        self.assertEqual(reply_btn.callback_data, f"wsp_reply:whisper:{self.wid}")
 
 class TestDeepLinkOpenOnce(unittest.TestCase):
     """Deep-link open: group message should be edited to opened state."""

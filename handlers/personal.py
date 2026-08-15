@@ -3,6 +3,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from handlers.keyboard_utils import back_button, cancel_button
 from database import upsert_user
+from handlers._formatting import format_display_time
 from database.personal import (
     create_personal_whisper, get_personal_whisper,
     get_user_inbox, get_user_sent,
@@ -84,7 +85,7 @@ def register_personal_handlers(bot: telebot.TeleBot, user_states: dict):
         text = (
             f"📩 *همسة شخصية*\n\n"
             f"من: {sender_name} (`{pw['sender_id']}`)\n"
-            f"الوقت: {pw['created_at'][:16]}\n\n"
+            f"الوقت: {format_display_time(pw['created_at'], '%Y-%m-%d %H:%M')}\n\n"
             f"{pw['content']}"
         )
         kb = InlineKeyboardMarkup()
