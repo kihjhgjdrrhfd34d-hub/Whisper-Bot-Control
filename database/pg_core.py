@@ -540,6 +540,17 @@ def delete_whisper(whisper_id):
             conn.execute("DELETE FROM whisper_replies WHERE whisper_id=%s", (whisper_id,))
         except Exception:
             pass
+        # Delete conditional-whisper data before the parent row, otherwise the
+        # FK from whisper_conditions/condition_attempts blocks the deletion
+        # (no ON DELETE CASCADE on those tables).
+        try:
+            conn.execute("DELETE FROM whisper_conditions WHERE whisper_id=%s", (whisper_id,))
+        except Exception:
+            pass
+        try:
+            conn.execute("DELETE FROM condition_attempts WHERE whisper_id=%s", (whisper_id,))
+        except Exception:
+            pass
         conn.execute("DELETE FROM whispers WHERE whisper_id=%s", (whisper_id,))
         conn.commit()
 
@@ -1162,6 +1173,17 @@ def delete_expired_whispers():
             wid = row["whisper_id"]
             conn.execute("DELETE FROM whisper_readers WHERE whisper_id=%s", (wid,))
             conn.execute("DELETE FROM curious_ones WHERE whisper_id=%s", (wid,))
+            # Delete conditional-whisper data before the parent row, otherwise
+            # the FK from whisper_conditions/condition_attempts blocks the
+            # deletion (no ON DELETE CASCADE on those tables).
+            try:
+                conn.execute("DELETE FROM whisper_conditions WHERE whisper_id=%s", (wid,))
+            except Exception:
+                pass
+            try:
+                conn.execute("DELETE FROM condition_attempts WHERE whisper_id=%s", (wid,))
+            except Exception:
+                pass
             conn.execute("DELETE FROM whispers WHERE whisper_id=%s", (wid,))
         conn.commit()
     return count
