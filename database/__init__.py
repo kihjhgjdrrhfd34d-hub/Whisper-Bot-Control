@@ -763,10 +763,14 @@ def record_whisper_read(whisper_id: str, user_id: int) -> bool:
         if limit > 0:
             # Limited types (first_one / first_three / first_five / future):
             # insert conditionally so concurrent requests can never exceed the
-            # reader limit. limit == 1 keeps the historical first_one behavior
-            # (no auto-lock — gating is handled by can_read_whisper).
+            # reader limit, ignoring a same-user repeat read (INSERT OR IGNORE)
+            # so a user who already opened the whisper gets a graceful False
+            # instead of a UNIQUE constraint error — matches the PostgreSQL
+            # sibling which uses ON CONFLICT ... DO NOTHING. limit == 1 keeps
+            # the historical first_one behavior (no auto-lock — gating is
+            # handled by can_read_whisper).
             conn.execute(
-                "INSERT INTO whisper_readers (whisper_id, user_id) "
+                "INSERT OR IGNORE INTO whisper_readers (whisper_id, user_id) "
                 "SELECT ?, ? "
                 "WHERE (SELECT COUNT(*) FROM whisper_readers WHERE whisper_id=?) < ?",
                 (whisper_id, user_id, whisper_id, limit),
