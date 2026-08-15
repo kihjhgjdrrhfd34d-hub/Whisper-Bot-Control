@@ -667,6 +667,12 @@ def delete_whisper(whisper_id):
             conn.execute("DELETE FROM condition_attempts WHERE whisper_id=?", (whisper_id,))
         except Exception:
             pass
+        # Delete contact reviews before the parent row, otherwise the FK from
+        # contact_reviews blocks the deletion (no ON DELETE CASCADE).
+        try:
+            conn.execute("DELETE FROM contact_reviews WHERE whisper_id=?", (whisper_id,))
+        except Exception:
+            pass
         conn.execute("DELETE FROM whispers WHERE whisper_id=?", (whisper_id,))
         conn.commit()
 
@@ -1354,6 +1360,12 @@ def delete_expired_whispers():
                 pass
             try:
                 conn.execute("DELETE FROM condition_attempts WHERE whisper_id=?", (wid,))
+            except Exception:
+                pass
+            # Delete contact reviews before the parent row, otherwise the FK
+            # from contact_reviews blocks the deletion (no ON DELETE CASCADE).
+            try:
+                conn.execute("DELETE FROM contact_reviews WHERE whisper_id=?", (wid,))
             except Exception:
                 pass
             conn.execute("DELETE FROM whispers WHERE whisper_id=?", (wid,))
