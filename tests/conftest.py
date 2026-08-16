@@ -23,7 +23,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 os.environ["BOT_TOKEN"] = "0:test_token_placeholder"
-os.environ["ADMIN_IDS"] = "999"
+os.environ["ADMIN_IDS"] = "999,888"
 
 _fd, _DB_PATH = tempfile.mkstemp(prefix="whisper_pytest_", suffix=".db")
 os.close(_fd)
