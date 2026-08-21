@@ -377,6 +377,12 @@ def _run_migrations():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def upsert_user(user_id, username=None, first_name=None, last_name=None):
+    def _clean(value):
+        return value if isinstance(value, str) else None
+
+    username = _clean(username)
+    first_name = _clean(first_name)
+    last_name = _clean(last_name)
     with get_conn() as conn:
         conn.execute(
             """

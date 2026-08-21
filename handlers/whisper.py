@@ -6,7 +6,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from handlers.keyboard_utils import confirm_button, cancel_button
 from database import (
     get_whisper, get_user, can_read_whisper, add_reader_if_new,
-    add_curious,
+    add_curious, is_new_user,
     toggle_whisper_lock, lock_whisper, delete_whisper, clear_whisper_readers,
     get_readers, get_curious_ones,
     get_setting, get_group_settings, is_banned, reader_count,
@@ -38,12 +38,20 @@ from services.whisper_service import (
 logger = logging.getLogger(__name__)
 
 _OPENED_LABEL = "🔒 تم فتح الهمسة"
-_BEFOREAD_LABEL = "🔐 افتح الهمسة"
+_BEFOREAD_LABEL = "🔒 اضغط للرؤية"
 
-_WHISPER_ALERT_INTRO = (
-    "🌙 بوت الهمسة الأول على تيليجرام ✨\n\n"
-    "💌 همستك السرية:\n\n"
-)
+
+def _whisper_media_type(w_dict: dict) -> str | None:
+    """Return the effective media type of a whisper row, or None for text.
+
+    ``media_type`` is the canonical column (a media whisper stores e.g.
+    ``photo``, a text whisper stores ``text``); ``message_type`` remains the
+    backward-compatible fallback for rows created before media_type existed.
+    """
+    mt = (w_dict or {}).get("media_type")
+    if mt and mt != "text":
+        return mt
+    return (w_dict or {}).get("message_type")
 
 _KEYBOARD_LOCKS: dict[str, threading.Lock] = {}
 
@@ -483,9 +491,9 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
         msgs = {
             "locked": "🔒 الهمسة مقفلة حالياً من قِبل صاحبها.",
             "taken_one": "تم فتح هذه الهمسة بواسطة أول شخص.",
-            "taken_three": "اكتمل عدد القراء لهذه الهمسة.",
-            "taken": "🔒 هذه الهمسة تم فتحها بالفعل.",
-            "not_target": "الهمسه ليست لك بطل فضول 😂",
+            "taken_three": "🔒 اكتمل عدد القراء لهذه الهمسة.",
+            "taken": "🔒 هذه الهمسة فُتحت بالكامل.",
+            "not_target": "🔒 الهمسة ليست لك، أيها الفضولي 😂",
             "already_read": "🔒 سبق لك فتح هذه الهمسة.",
             "not_found": "❌ هذه الهمسة غير موجودة.",
             "unknown": "❌ خطأ في التحقق من الهمسة.",
@@ -523,17 +531,73 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
         is_new = add_reader_if_new(whisper_id, user.id)
         logger.info("[DESTROY] add_reader_if_new result=%s whisper_id=%s", is_new, whisper_id)
         if not is_new:
-            msg = "🔒 لقد قرأت هذه الهمسة التدميرية من قبل!"
+            msg = "🔒 سبق لك فتح هذه الهمسة التدميرية."
             if call:
                 bot.answer_callback_query(call.id, msg, show_alert=True)
             else:
                 bot.send_message(user.id, msg)
             return True
-        variant_text = resolve_variant(w, user.id)
-        if call:
-            bot.answer_callback_query(call.id, f"💣 {variant_text}", show_alert=True)
+        w_dict_dest = dict(w)
+        mt = _whisper_media_type(w_dict_dest)
+        if mt:
+            mt_label = {
+                "photo": "🖼 صورة", "video": "🎬 فيديو", "voice": "🎤 تسجيل صوتي",
+                "audio": "🎵 ملف صوتي", "document": "📄 مستند", "sticker": "🏷 ملصق",
+                "animation": "🎞 متحركة", "contact": "👤 جهة اتصال",
+                "location": "📍 موقع",
+            }.get(mt, mt)
+            caption = resolve_variant(w, user.id) or w_dict_dest.get("caption") or ""
+            # answer_callback_query is a popup — it can NEVER transport media.
+            # Deliver the ACTUAL stored media first; on DM failure fall back to
+            # the recoverable text in the popup instead of a fake success.
+            label_text = f"💣 {mt_label}"
+            from services.media import send_media_message
+            try:
+                sent = send_media_message(bot, user.id, w_dict_dest, text=caption or "")
+            except Exception as exc:
+                logger.warning(
+                    "[DESTROY] send_media_message failed whisper_id=%s user_id=%s: %s",
+                    whisper_id, user.id, exc,
+                )
+                sent = False
+            fallback_text = label_text
+            if not sent and caption:
+                fallback_text += f"\n{caption}"
+            if call:
+                try:
+                    bot.answer_callback_query(call.id, fallback_text[:200], show_alert=True)
+                except Exception as exc:
+                    logger.warning(
+                        "[DESTROY] answer_callback_query failed whisper_id=%s user_id=%s: %s",
+                        whisper_id, user.id, exc,
+                    )
+            else:
+                try:
+                    bot.send_message(user.id, fallback_text)
+                except Exception as exc:
+                    logger.warning(
+                        "[DESTROY] content send failed whisper_id=%s user_id=%s: %s",
+                        whisper_id, user.id, exc,
+                    )
         else:
-            bot.send_message(user.id, f"💣 {variant_text}")
+            variant_text = resolve_variant(w, user.id)
+            content = f"💣 {variant_text}"
+            if call:
+                try:
+                    bot.answer_callback_query(call.id, content, show_alert=True)
+                except Exception as exc:
+                    logger.warning(
+                        "[DESTROY] answer_callback_query failed whisper_id=%s user_id=%s: %s",
+                        whisper_id, user.id, exc,
+                    )
+            else:
+                try:
+                    bot.send_message(user.id, content)
+                except Exception as exc:
+                    logger.warning(
+                        "[DESTROY] content send failed whisper_id=%s user_id=%s: %s",
+                        whisper_id, user.id, exc,
+                    )
         logger.info("[DESTROY] content shown whisper_id=%s", whisper_id)
         # everyone type: NEVER modify group keyboard, NEVER lock/delete, keep in DB
         if get_setting("read_receipt_enabled") == "1":
@@ -547,27 +611,77 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
 
     def _answer_with_content():
         w_dict = dict(w)
-        if w_dict.get("message_type"):
+        mt = _whisper_media_type(w_dict)
+        if mt:
             mt_label = {
                 "photo": "🖼 صورة", "video": "🎬 فيديو", "voice": "🎤 تسجيل صوتي",
-                "audio": "🎵 ملف صوتي", "document": "📄 مستند", "location": "📍 موقع",
-                "animation": "🎞 متحركة",
-            }.get(w_dict["message_type"], w_dict["message_type"])
+                "audio": "🎵 ملف صوتي", "document": "📄 مستند", "sticker": "🏷 ملصق",
+                "animation": "🎞 متحركة", "contact": "👤 جهة اتصال",
+                "location": "📍 موقع",
+            }.get(mt, mt)
             caption = resolve_variant(w, user.id) or w_dict.get("caption") or ""
-            alert_text = f"{_WHISPER_ALERT_INTRO}🤫 {mt_label}"
-            if caption:
-                alert_text += f"\n{caption}"
+            # answer_callback_query is a popup — it can NEVER transport media.
+            # Deliver the ACTUAL stored media (file_id + caption) to the reader's
+            # private chat first, then confirm with a short label. If the DM is
+            # unavailable (blocked / never started) fall back to showing the
+            # recoverable text in the callback popup instead — never a fake
+            # successful delivery and never an unhandled exception.
+            from services.media import send_media_message
+            try:
+                sent = send_media_message(bot, user.id, w_dict, text=caption or "")
+            except Exception as exc:
+                logger.warning(
+                    "[MEDIA] send_media_message failed whisper_id=%s user_id=%s: %s",
+                    whisper_id, user.id, exc,
+                )
+                sent = False
+            label_text = f"🤫 {mt_label}"
             if call:
-                bot.answer_callback_query(call.id, alert_text, show_alert=True)
+                popup_text = label_text
+                if not sent and caption:
+                    popup_text += f"\n{caption}"
+                try:
+                    bot.answer_callback_query(call.id, popup_text[:200], show_alert=True)
+                except Exception as exc:
+                    logger.warning(
+                        "[MEDIA] answer_callback_query failed whisper_id=%s user_id=%s: %s",
+                        whisper_id, user.id, exc,
+                    )
             else:
-                bot.send_message(user.id, alert_text)
+                # Message context (e.g. the /start whisper_<id> deep link).
+                # NOTE: a real callback popup is impossible here — /start is a
+                # plain message with NO callback_query_id, so answer_callback_query
+                # cannot fire. Deliver the media, else downgrade to text — always
+                # guarded so a blocked/DM-unavailable user never crashes the flow.
+                content_send = f"🤫 تم فتح الهمسة ({mt_label}) ✅" if sent else label_text
+                if not sent and caption:
+                    content_send = f"{label_text}\n{caption}"
+                try:
+                    bot.send_message(user.id, content_send)
+                except Exception as exc:
+                    logger.warning(
+                        "[MEDIA] content send failed whisper_id=%s user_id=%s: %s",
+                        whisper_id, user.id, exc,
+                    )
         else:
             variant_text = resolve_variant(w, user.id)
-            content = f"{_WHISPER_ALERT_INTRO}🤫 {variant_text}" if variant_text else f"{_WHISPER_ALERT_INTRO}🤫 (محتوى فارغ)"
+            content = f"🤫 {variant_text}" if variant_text else "🤫 (محتوى فارغ)"
             if call:
-                bot.answer_callback_query(call.id, content, show_alert=True)
+                try:
+                    bot.answer_callback_query(call.id, content, show_alert=True)
+                except Exception as exc:
+                    logger.warning(
+                        "[READ] answer_callback_query failed whisper_id=%s user_id=%s: %s",
+                        whisper_id, user.id, exc,
+                    )
             else:
-                bot.send_message(user.id, content)
+                try:
+                    bot.send_message(user.id, content)
+                except Exception as exc:
+                    logger.warning(
+                        "[READ] content send failed whisper_id=%s user_id=%s: %s",
+                        whisper_id, user.id, exc,
+                    )
 
     def _maybe_self_destruct(is_new_read, reader_count_val):
         if is_destructive and is_new_read:
@@ -642,12 +756,13 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
             else:
                 sname = "شخص"
             content_text = resolve_variant(rw, user.id) or ""
-            if not content_text and rw.get("message_type"):
+            if not content_text and _whisper_media_type(rw):
                 mt_label = {
                     "photo": "🖼 صورة", "video": "🎬 فيديو", "voice": "🎤 تسجيل صوتي",
-                    "audio": "🎵 ملف صوتي", "document": "📄 مستند", "location": "📍 موقع",
-                    "animation": "🎞 متحركة",
-                }.get(rw["message_type"], rw["message_type"])
+                    "audio": "🎵 ملف صوتي", "document": "📄 مستند", "sticker": "🏷 ملصق",
+                    "animation": "🎞 متحركة", "contact": "👤 جهة اتصال",
+                    "location": "📍 موقع",
+                }.get(_whisper_media_type(rw), _whisper_media_type(rw))
                 caption = rw.get("caption") or ""
                 content_text = mt_label
                 if caption:
@@ -724,6 +839,143 @@ def _complete_read_flow(bot, call, user, whisper_id, w, is_destructive):
         _send_read_receipt(is_new_read)
 
 
+def _send_whisper_content_message(bot, user, w_dict):
+    """Deliver whisper content in a plain-message context (no callback).
+
+    Media whispers keep their actual media type + stored caption; text
+    whispers are shown as text. Used for the ``/start whisper_<id>``
+    deep-link open, including the sender/admin preview path.
+    Does NOT record a read.
+    """
+    w_dict = dict(w_dict)
+    mt = _whisper_media_type(w_dict)
+    if mt:
+        from services.media import send_media_message
+        mt_label = {
+            "photo": "🖼 صورة", "video": "🎬 فيديو", "voice": "🎤 تسجيل صوتي",
+            "audio": "🎵 ملف صوتي", "document": "📄 مستند", "sticker": "🏷 ملصق",
+            "animation": "🎞 متحركة", "contact": "👤 جهة اتصال",
+            "location": "📍 موقع",
+        }.get(mt, mt)
+        caption = resolve_variant(w_dict, user.id) or w_dict.get("caption") or ""
+        try:
+            sent = send_media_message(bot, user.id, w_dict, text=caption or "")
+        except Exception as exc:
+            logger.warning(
+                "[PREVIEW] send_media_message failed whisper_id=%s user_id=%s: %s",
+                w_dict.get("whisper_id"), user.id, exc,
+            )
+            sent = False
+        if not sent:
+            alert_text = f"🤫 {mt_label}"
+            if caption:
+                alert_text += f"\n{caption}"
+            try:
+                bot.send_message(user.id, alert_text)
+            except Exception as exc:
+                logger.warning(
+                    "[PREVIEW] fallback send failed whisper_id=%s user_id=%s: %s",
+                    w_dict.get("whisper_id"), user.id, exc,
+                )
+    else:
+        variant_text = resolve_variant(w_dict, user.id)
+        content = f"🤫 {variant_text}" if variant_text else "🤫 (محتوى فارغ)"
+        try:
+            bot.send_message(user.id, content)
+        except Exception as exc:
+            logger.warning(
+                "[PREVIEW] text send failed whisper_id=%s user_id=%s: %s",
+                w_dict.get("whisper_id"), user.id, exc,
+            )
+
+
+def handle_whisper_start_deep_link(bot, msg, user_states, whisper_id: str):
+    """Open a whisper directly from ``/start whisper_<WHISPER_ID>``.
+
+    Called by the /start handler (bot.py) after the user taps the deep-link
+    button generated by the read-button start gate. The whisper is revealed
+    immediately in the private chat — no second button press is required.
+
+    Reuses the exact same building blocks as the normal read flow:
+      * can_read_whisper for every access rule (first_one / first_three /
+        everyone / custom / contact, lock, already-read, not-target).
+      * condition_registry + ConditionUI for conditional whispers.
+      * _complete_read_flow (message context) for read recording, duplicate
+        reads, group-keyboard refresh, sender notifications and destructive
+        whisper handling.
+    """
+    user = msg.from_user
+    ensure_user(user.id, user.username, user.first_name, user.last_name)
+
+    w = get_whisper(whisper_id)
+    if not w:
+        bot.send_message(
+            user.id,
+            "❌ هذه الهمسة غير متاحة (ربما انتهت أو حُذفت).",
+        )
+        return
+    w = dict(w)
+    is_destructive = is_destructive_whisper(w)
+
+    # Sender / admin preview — content revealed without recording a read
+    # (identical to the callback read flow).
+    from config import ADMIN_IDS
+    if user.id in ADMIN_IDS or is_own_whisper(user.id, w):
+        _send_whisper_content_message(bot, user, w)
+        return
+
+    # Same access rules as the normal read flow.
+    can, reason = can_read_whisper(whisper_id, user.id)
+    if not can:
+        msgs = {
+            "locked": "🔒 الهمسة مقفلة حالياً من قِبل صاحبها.",
+            "taken_one": "تم فتح هذه الهمسة بواسطة أول شخص.",
+            "taken_three": "🔒 اكتمل عدد القراء لهذه الهمسة.",
+            "taken": "🔒 هذه الهمسة فُتحت بالكامل.",
+            "not_target": "🔒 الهمسة ليست لك، أيها الفضولي 😂",
+            "already_read": "🔒 سبق لك فتح هذه الهمسة.",
+            "not_found": "❌ هذه الهمسة غير موجودة.",
+            "unknown": "❌ خطأ في التحقق من الهمسة.",
+        }
+        if reason == "not_target":
+            add_curious(whisper_id, user.id)
+        if reason == "taken":
+            limit = effective_max_readers(w)
+            if limit == 1:
+                msg_txt = msgs["taken_one"]
+            elif limit > 1:
+                msg_txt = msgs["taken_three"]
+            else:
+                msg_txt = msgs["taken"]
+        else:
+            msg_txt = msgs.get(reason, "❌ لا يمكنك قراءة هذه الهمسة.")
+        bot.send_message(user.id, msg_txt)
+        return
+
+    # Conditions — same engine as the normal read flow (never bypassed).
+    cond_results = condition_registry.check_all(w, user.id)
+    unmet = [r for r in cond_results if not r.passed]
+    if unmet:
+        for result in unmet:
+            if result.requires_interaction:
+                ConditionUI.render_interaction(
+                    call=None, bot=bot, whisper=w,
+                    condition_result=result,
+                    user_states=user_states,
+                    user_id=user.id,
+                )
+                return
+            else:
+                bot.send_message(
+                    user.id,
+                    result.message or "❌ لم يتم استيفاء الشروط.",
+                )
+                return
+
+    # Record the read + reveal through the shared read flow (message context).
+    _complete_read_flow(bot, None, user, whisper_id, w, is_destructive)
+
+
 def handle_condition_answer_message(bot, msg, user_states) -> bool:
     """Process a condition answer (e.g. password) submitted by a user in
     cond_answer state. Returns True if the message was consumed.
@@ -779,8 +1031,7 @@ def handle_condition_answer_message(bot, msg, user_states) -> bool:
             ))
             bot.send_message(
                 user.id,
-                "✅ *تم فتح الهمسة!*\n\nاضغط الزر لعرضها 👇",
-                parse_mode="Markdown",
+                "✅ تم فتح الهمسة!\n\nاضغط الزر لقراءتها 👇",
                 reply_markup=kb,
             )
         else:
@@ -905,11 +1156,14 @@ def _register_message_handlers(bot, user_states):
             "document": "📄 هذه همسة تحتوي على مستند",
             "location": "📍 هذه همسة تحتوي على موقع",
             "animation": "🎞 هذه همسة تحتوي على متحركة",
+            "sticker": "🏷 هذه همسة تحتوي على ملصق",
+            "contact": "👤 هذه همسة تحتوي على جهة اتصال",
         }.get(media["message_type"], "📎 هذه همسة تحتوي على وسائط")
 
         try:
             sent_msg = bot.send_message(
-                chat_id, media_label, reply_markup=kb,
+                chat_id, f"<blockquote>{media_label}</blockquote>",
+                reply_markup=kb, parse_mode="HTML",
             )
             if sent_msg:
                 update_whisper_group_message(
@@ -952,6 +1206,14 @@ def _register_message_handlers(bot, user_states):
     @bot.message_handler(content_types=["animation"])
     def _media_animation_reply(msg: telebot.types.Message):
         _handle_media_reply(msg, "animation")
+
+    @bot.message_handler(content_types=["sticker"])
+    def _media_sticker_reply(msg: telebot.types.Message):
+        _handle_media_reply(msg, "sticker")
+
+    @bot.message_handler(content_types=["contact"])
+    def _media_contact_reply(msg: telebot.types.Message):
+        _handle_media_reply(msg, "contact")
 
     # ─── /mwhisper command: send media whisper by user ID ────────────────
     @bot.message_handler(commands=["mwhisper"])
@@ -1078,8 +1340,8 @@ def _register_message_handlers(bot, user_states):
         try:
             sent_msg = bot.send_message(
                 msg.chat.id,
-                f"💣 همسة تدميرية للمستخدم `{target_id}`",
-                parse_mode="Markdown",
+                f"<blockquote>💣 همسة تدميرية للمستخدم {target_id}</blockquote>",
+                parse_mode="HTML",
                 reply_markup=kb,
             )
             if sent_msg:
@@ -1150,17 +1412,17 @@ def _register_callback_handlers(bot, user_states):
                     )
                 elif limit > 1:
                     bot.answer_callback_query(
-                        call.id, "اكتمل عدد القراء لهذه الهمسة.", show_alert=True,
+                        call.id, "🔒 اكتمل عدد القراء لهذه الهمسة.", show_alert=True,
                     )
                 else:
                     bot.answer_callback_query(
-                        call.id, "🔒 هذه الهمسة تم فتحها بالفعل.", show_alert=True,
+                        call.id, "🔒 هذه الهمسة فُتحت بالكامل.", show_alert=True,
                     )
             elif reason == "not_target":
                 add_curious(whisper_id, user.id)
                 bot.answer_callback_query(
                     call.id,
-                    "الهمسه ليست لك بطل فضول 😂",
+                    "🔒 الهمسة ليست لك، أيها الفضولي 😂",
                     show_alert=True,
                 )
             elif reason == "already_read":
@@ -1193,7 +1455,7 @@ def _register_callback_handlers(bot, user_states):
             logger.info("[DESTROY] add_reader_if_new result=%s whisper_id=%s", is_new, whisper_id)
             if not is_new:
                 bot.answer_callback_query(
-                    call.id, "🔒 لقد قرأت هذه الهمسة التدميرية من قبل!", show_alert=True
+                    call.id, "🔒 سبق لك فتح هذه الهمسة التدميرية.", show_alert=True
                 )
                 return True
             variant_text = resolve_variant(w, user.id)
@@ -1212,24 +1474,52 @@ def _register_callback_handlers(bot, user_states):
 
         def _answer_with_content(w: dict):
             w_dict = dict(w)
-            if w_dict.get("message_type"):
+            mt = _whisper_media_type(w_dict)
+            if mt:
                 mt_label = {
                     "photo": "🖼 صورة",
                     "video": "🎬 فيديو",
                     "voice": "🎤 تسجيل صوتي",
                     "audio": "🎵 ملف صوتي",
                     "document": "📄 مستند",
-                    "location": "📍 موقع",
+                    "sticker": "🏷 ملصق",
                     "animation": "🎞 متحركة",
-                }.get(w_dict["message_type"], w_dict["message_type"])
+                    "contact": "👤 جهة اتصال",
+                    "location": "📍 موقع",
+                }.get(mt, mt)
                 caption = resolve_variant(w, user.id) or w_dict.get("caption") or ""
-                alert_text = f"🤫 {mt_label}"
-                if caption:
-                    alert_text += f"\n{caption}"
-                bot.answer_callback_query(call.id, alert_text, show_alert=True)
+                # Popup stays a short label confirmation — the ACTUAL media
+                # (file_id + caption) is delivered as a separate DM message.
+                # Guard every delivery so a blocked/DM-unavailable user never
+                # crashes the callback and never gets a fake successful popup.
+                from services.media import send_media_message
+                try:
+                    sent = send_media_message(bot, user.id, w_dict, text=caption or "")
+                except Exception as exc:
+                    logger.warning(
+                        "[MEDIA] own-preview send_media_message failed whisper_id=%s user_id=%s: %s",
+                        whisper_id, user.id, exc,
+                    )
+                    sent = False
+                popup_text = f"🤫 {mt_label}"
+                if not sent and caption:
+                    popup_text += f"\n{caption}"
+                try:
+                    bot.answer_callback_query(call.id, popup_text[:200], show_alert=True)
+                except Exception as exc:
+                    logger.warning(
+                        "[MEDIA] own-preview answer_callback_query failed whisper_id=%s user_id=%s: %s",
+                        whisper_id, user.id, exc,
+                    )
             else:
                 variant_text = resolve_variant(w, user.id)
-                bot.answer_callback_query(call.id, f"🤫 {variant_text}", show_alert=True)
+                try:
+                    bot.answer_callback_query(call.id, f"🤫 {variant_text}", show_alert=True)
+                except Exception as exc:
+                    logger.warning(
+                        "[READ] own-preview answer_callback_query failed whisper_id=%s user_id=%s: %s",
+                        whisper_id, user.id, exc,
+                    )
 
 
 
@@ -1292,16 +1582,18 @@ def _register_callback_handlers(bot, user_states):
                     sender_name = "شخص"
 
                 content_text = resolve_variant(w, user.id) or ""
-                if not content_text and w.get("message_type"):
+                if not content_text and _whisper_media_type(w):
                     mt_label = {
                         "photo": "🖼 صورة",
                         "video": "🎬 فيديو",
                         "voice": "🎤 تسجيل صوتي",
                         "audio": "🎵 ملف صوتي",
                         "document": "📄 مستند",
-                        "location": "📍 موقع",
+                        "sticker": "🏷 ملصق",
                         "animation": "🎞 متحركة",
-                    }.get(w["message_type"], w["message_type"])
+                        "contact": "👤 جهة اتصال",
+                        "location": "📍 موقع",
+                    }.get(_whisper_media_type(w), _whisper_media_type(w))
                     caption = w.get("caption") or ""
                     content_text = mt_label
                     if caption:
@@ -1380,9 +1672,55 @@ def _register_callback_handlers(bot, user_states):
                     f"تعذر إرسال إشعار الهمسة العامة إلى {w['sender_id']}: {e}"
                 )
 
+        def _redirect_to_start(whisper_id: str):
+            """Redirect a user who never completed /start to the bot's private
+            chat. The whisper content is NOT revealed, no reader is recorded
+            and the whisper state is left untouched.
+
+            Delivery note: a Telegram bot cannot initiate a private chat with a
+            user who never pressed /start, so the deep-link button + prompt are
+            posted into the chat where the read button was pressed (the group).
+            Tapping the button opens the bot's private chat and sends
+            ``/start whisper_<id>``, where the whisper is revealed directly.
+            """
+            bot_username = ""
+            try:
+                me = bot.get_me()
+                cand = getattr(me, "username", None)
+                if isinstance(cand, str) and cand:
+                    bot_username = cand
+            except Exception:
+                bot_username = ""
+            # Ack the callback WITHOUT showing any whisper content in a popup.
+            bot.answer_callback_query(call.id, show_alert=False)
+
+            kb = None
+            if bot_username:
+                link = f"https://t.me/{bot_username}?start=whisper_{whisper_id}"
+                kb = InlineKeyboardMarkup(row_width=1)
+                kb.add(InlineKeyboardButton("🚀 فتح الهمسة", url=link))
+
+            chat_id = user.id
+            if call is not None and getattr(call, "message", None) is not None:
+                chat_id = call.message.chat.id
+            try:
+                bot.send_message(
+                    chat_id,
+                    "🤖 ستُفتح مباشرة في الخاص 👇",
+                    reply_markup=kb,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[START-GATE] redirect message failed for chat_id=%s user_id=%s: %s",
+                    chat_id, user.id, exc,
+                )
+
         # ── Main flow ────────────────────────────────────────────────────────
 
 
+        # Capture pre-existing DB state BEFORE ensure_user — ensure_user would
+        # otherwise create a record and hide who really never engaged the bot.
+        _user_was_registered = get_user(user.id) is not None
         ensure_user(user.id, user.username, user.first_name, user.last_name)
         if _is_blocked():
             return
@@ -1400,12 +1738,13 @@ def _register_callback_handlers(bot, user_states):
         if user.id in ADMIN_IDS:
             w_dict_admin = dict(w)
             content_admin = w_dict_admin.get("content") or w_dict_admin.get("caption") or ""
-            if w_dict_admin.get("message_type"):
+            if _whisper_media_type(w_dict_admin):
                 mt_label = {
                     "photo": "🖼 صورة", "video": "🎬 فيديو", "voice": "🎤 تسجيل صوتي",
-                    "audio": "🎵 ملف صوتي", "document": "📄 مستند", "location": "📍 موقع",
-                    "animation": "🎞 متحركة",
-                }.get(w_dict_admin["message_type"], w_dict_admin["message_type"])
+                    "audio": "🎵 ملف صوتي", "document": "📄 مستند", "sticker": "🏷 ملصق",
+                    "animation": "🎞 متحركة", "contact": "👤 جهة اتصال",
+                    "location": "📍 موقع",
+                }.get(_whisper_media_type(w_dict_admin), _whisper_media_type(w_dict_admin))
                 alert_text = f"🤫 {mt_label}"
                 if content_admin:
                     alert_text += f"\n{content_admin}"
@@ -1416,6 +1755,18 @@ def _register_callback_handlers(bot, user_states):
         own = is_own_whisper(user.id, w)
         if own:
             _answer_with_content(w)
+            return
+
+        # ── Start gate: users who never engaged the bot cannot read ─────────
+        #    Users with no DB record at all (never seen by the bot) are
+        #    redirected to the bot's private chat (Start). Registered users are
+        #    considered to have completed /start and proceed through the normal
+        #    read flow. No whisper content is revealed, no reader is recorded
+        #    and no state changes happen for redirected users — the existing
+        #    read/access logic is untouched.
+        if is_new_user(user.id) and not _user_was_registered:
+            logger.info("[START-GATE] user_id=%s blocked before read whisper_id=%s", user.id, whisper_id)
+            _redirect_to_start(whisper_id)
             return
 
         if not _check_access(whisper_id, w):
